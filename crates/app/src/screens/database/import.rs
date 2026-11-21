@@ -421,7 +421,7 @@ impl DatabaseScreen {
                 h_flex()
                     .gap(px(8.))
                     .child(import_label("Since"))
-                    .child(since),
+                    .child(since.flex_1().min_w_0().flex_wrap()),
             )
             .child(h_flex().gap(px(8.)).child(import_label("Into")).child(into))
             .when(site == Site::Lichess, |body| {
