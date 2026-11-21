@@ -625,7 +625,7 @@ pub fn translate(language: Language, text: &str) -> &str {
             }
             "Info lines" => "Infozeilen",
             "Leaks from your games" => "Abweichungen in Ihren Partien",
-            "Left rep." => "Rep. verlassen",
+            "Left rep." => "Repertoire verlassen",
             "Licence" => "Lizenz",
             "Line" => "Variante",
             "Line preview" => "Variantenvorschau",

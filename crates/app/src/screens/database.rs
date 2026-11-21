@@ -101,8 +101,8 @@ const ROW_H: f32 = 37.5;
 // Column widths for the games table.
 const W_NUMBER: f32 = 48.;
 const W_RESULT: f32 = 82.;
-const W_LEFT: f32 = 115.;
-const W_MOVES: f32 = 62.;
+const W_LEFT: f32 = 99.;
+const W_MOVES: f32 = 78.;
 const W_DATE: f32 = 116.;
 const W_SOURCE: f32 = 87.;
 const W_ACC: f32 = 44.;
