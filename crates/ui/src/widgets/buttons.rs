@@ -269,12 +269,7 @@ impl RenderOnce for Btn {
         {
             el = el.child(label);
         }
-        if let Some(text) = self.tooltip {
-            el = el.tooltip(move |window, cx| {
-                gpui_component::tooltip::Tooltip::new(text.clone()).build(window, cx)
-            });
-        }
-        el
+        TooltipTrigger::new(el, self.tooltip)
     }
 }
 

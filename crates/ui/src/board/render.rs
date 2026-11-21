@@ -1,7 +1,7 @@
 //! Drawing the board: squares, highlights, pieces, arrows and the promotion picker.
 
 use super::*;
-use crate::widgets::StyleExt as _;
+use crate::widgets::{StyleExt as _, TooltipExt as _};
 use gpui::{Div, Entity};
 
 /// Lichess' premove highlight, rgba(20, 30, 85, 0.5).
@@ -336,9 +336,7 @@ impl BoardView {
                 .text_size(cell * 0.20)
                 .text_color(rgb(0xffffff))
                 .child(glyph)
-                .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(label).build(window, cx)
-                }),
+                .with_tooltip(crate::i18n::t(label)),
         )
     }
 }

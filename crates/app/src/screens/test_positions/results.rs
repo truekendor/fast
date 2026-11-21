@@ -1,6 +1,7 @@
 //! The results: a summary per engine and a table with each position's outcome.
 
 use super::*;
+use ui::widgets::TooltipExt as _;
 
 pub(super) fn render_cell(cell: Option<&Cell>) -> Div {
     let base = div().flex_1().min_w(px(140.)).truncate().font_family(MONO);
@@ -276,13 +277,7 @@ impl TestPositionsScreen {
                             .truncate()
                             .child(SharedString::from(format!("Skipped: {problem}")))
                             .id(("test-row-problem", index))
-                            .tooltip({
-                                let text: SharedString = line.text.clone().into();
-                                move |window, cx| {
-                                    gpui_component::tooltip::Tooltip::new(text.clone())
-                                        .build(window, cx)
-                                }
-                            }),
+                            .with_tooltip(line.text.clone()),
                     );
             }
             (Ok(record), None) => {

@@ -1,6 +1,7 @@
 //! The game table, its header and the summary above it.
 
 use super::*;
+use ui::widgets::TooltipExt as _;
 
 impl DatabaseScreen {
     /// Separates game searching from less frequent review, export and collection actions.
@@ -415,12 +416,7 @@ impl DatabaseScreen {
                                 px(12.),
                                 T.muted,
                             ))
-                            .tooltip(|window, cx| {
-                                gpui_component::tooltip::Tooltip::new(ui::i18n::t(
-                                    "Has comments or variations",
-                                ))
-                                .build(window, cx)
-                            }),
+                            .with_tooltip(ui::i18n::t("Has comments or variations")),
                     )
                 })
         };

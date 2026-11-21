@@ -1,6 +1,7 @@
 //! The preview of the selected game.
 
 use super::*;
+use ui::widgets::TooltipExt as _;
 
 /// "13.Ne2 Ne8 14.h4?!" from a stored game and its deviation like "14.h4".
 pub(super) fn leak_context(left: &str, sans: &[String]) -> String {
@@ -350,9 +351,6 @@ impl RenderOnce for FindingRow {
                     cx.stop_propagation();
                 }
             })
-            .tooltip(move |window, cx| {
-                gpui_component::tooltip::Tooltip::new(text.clone()).build(window, cx)
-            })
             .child(
                 mono(self.finding.label)
                     .min_w_0()
@@ -361,6 +359,7 @@ impl RenderOnce for FindingRow {
                     .text_color(rgb(T.fg)),
             )
             .child(mono(self.finding.loss).flex_none().text_color(rgb(T.warn)))
+            .with_tooltip(text)
     }
 }
 

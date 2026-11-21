@@ -5,7 +5,9 @@ use db::MoveStat;
 use gpui::{Context, IntoElement, div, px, rgb};
 use ui::{
     T,
-    widgets::{Listen, StyleExt, btn, h_flex, mono, section_label, v_flex},
+    widgets::{
+        Listen, StyleExt, TooltipExt as _, TooltipTrigger, btn, h_flex, mono, section_label, v_flex,
+    },
 };
 
 use super::*;
@@ -62,9 +64,6 @@ fn results_bar(stat: &MoveStat) -> gpui::AnyElement {
         .border_as(T.border_strong)
         .rounded(px(4.))
         .overflow_hidden()
-        .tooltip(move |window, cx| {
-            gpui_component::tooltip::Tooltip::new(tooltip.clone()).build(window, cx)
-        })
         .children(
             shares
                 .into_iter()
@@ -98,6 +97,7 @@ fn results_bar(stat: &MoveStat) -> gpui::AnyElement {
                         })
                 }),
         )
+        .with_tooltip(tooltip)
         .into_any_element()
 }
 
@@ -516,14 +516,6 @@ impl AnalyseScreen {
             .cursor_pointer()
             .hover(|style| style.bg(rgb(T.hover)))
             .focus_visible(|style| style.border_2().border_color(rgb(T.accent)))
-            .when(open.is_none(), |button| {
-                button.tooltip(|window, cx| {
-                    gpui_component::tooltip::Tooltip::new(ui::i18n::t(
-                        "Choose the database for the opening tree",
-                    ))
-                    .build(window, cx)
-                })
-            })
             .on_click(move |event, window, cx| {
                 // Enter and Space are handled with the arrow keys in `explorer_key`.
                 if !event.is_keyboard() {
@@ -555,6 +547,9 @@ impl AnalyseScreen {
                 px(12.),
                 T.muted,
             ));
+        let tooltip = open
+            .is_none()
+            .then(|| ui::i18n::t("Choose the database for the opening tree").into());
         let menu = open.map(|highlight| {
             let game_db = self.db_game.as_ref().map(|game| game.path.clone());
             let mut list = v_flex()
@@ -620,7 +615,7 @@ impl AnalyseScreen {
         });
         div()
             .col_w(width)
-            .child(button)
+            .child(TooltipTrigger::new(button, tooltip))
             .children(menu)
             .into_any_element()
     }

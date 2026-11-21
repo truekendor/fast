@@ -15,8 +15,9 @@ mod buttons;
 mod dialogs;
 mod ext;
 mod inputs;
+mod tooltip;
 
-pub use self::{buttons::*, dialogs::*, ext::*, inputs::*};
+pub use self::{buttons::*, dialogs::*, ext::*, inputs::*, tooltip::*};
 
 pub fn h_flex() -> Div {
     div().flex().flex_row().items_center()

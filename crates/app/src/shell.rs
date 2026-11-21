@@ -14,7 +14,7 @@ use gpui_component::input::{InputEvent, InputState, TextareaState};
 use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
 use ui::{
     SANS, T,
-    widgets::{Btn, BtnKind, Listen, StyleExt, btn, h_flex, icon_btn, v_flex},
+    widgets::{Btn, BtnKind, Listen, StyleExt, TooltipExt as _, btn, h_flex, icon_btn, v_flex},
 };
 
 use crate::{
@@ -169,9 +169,7 @@ impl TabActivity {
                 Self::Paused => mark.child(ui::widgets::icon("icons/pause.svg", px(12.), T.muted)),
                 Self::Searching => mark.size(px(7.)).rounded_full().bg(rgb(T.accent)),
             })
-            .tooltip(move |window, cx| {
-                gpui_component::tooltip::Tooltip::new(ui::i18n::t(tip)).build(window, cx)
-            })
+            .with_tooltip(ui::i18n::t(tip))
     }
 }
 

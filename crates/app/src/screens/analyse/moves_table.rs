@@ -433,6 +433,9 @@ impl AnalyseScreen {
                 after.play_unchecked(mv);
                 (entry.path.clone(), position_hash(&after), label.clone())
             });
+        let reference_tooltip = count_target
+            .is_some()
+            .then(|| ui::i18n::t("Show these games in the Database tab").into());
         let workspace = self.workspace.clone();
         h_flex()
             .id(("move-row", index))
@@ -507,12 +510,6 @@ impl AnalyseScreen {
                     .text_as(13., T.fg_2)
                     .when_some(count_target, |cell, (path, hash, label)| {
                         cell.hover(|style| style.text_color(rgb(T.accent)).underline())
-                            .tooltip(|window, cx| {
-                                gpui_component::tooltip::Tooltip::new(ui::i18n::t(
-                                    "Show these games in the Database tab",
-                                ))
-                                .build(window, cx)
-                            })
                             .on_click(move |_, window, cx| {
                                 cx.stop_propagation();
                                 let (path, label) = (path.clone(), label.clone());
@@ -529,7 +526,8 @@ impl AnalyseScreen {
                                 }
                             })
                     })
-                    .child(stat_text(&row.reference)),
+                    .child(stat_text(&row.reference))
+                    .map(|cell| ui::widgets::TooltipTrigger::new(cell, reference_tooltip)),
             )
             .when(view.my_moves, |row_el| {
                 row_el

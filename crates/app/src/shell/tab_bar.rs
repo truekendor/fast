@@ -418,10 +418,6 @@ impl Workspace {
             .cursor_pointer()
             .text_size(px(13.))
             .text_color(rgb(if active { T.fg } else { T.muted }))
-            .tooltip(|window, cx| {
-                gpui_component::tooltip::Tooltip::new(ui::i18n::t("Double-click to rename"))
-                    .build(window, cx)
-            })
             .on_click(
                 select.listen_event(move |this, event: &gpui::ClickEvent, window, cx| {
                     this.activate_tab(id, cx);
@@ -450,6 +446,7 @@ impl Workspace {
                     }))
                     .children(activity.map(TabActivity::mark))
             })
+            .with_tooltip(ui::i18n::t("Double-click to rename"))
     }
 
     /// New tab, drawn as one more tab: closed it looks like the inactive tabs, and while
@@ -490,9 +487,6 @@ impl Workspace {
                         .hover(|tab| tab.bg(rgb(T.hover)).text_color(rgb(T.fg)))
                 }
             })
-            .tooltip(move |window, cx| {
-                gpui_component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
-            })
             .on_click(cx.entity().listen_event(move |this, _, _, cx| {
                 this.new_tab_menu_open = !this.new_tab_menu_open;
                 cx.notify();
@@ -503,5 +497,6 @@ impl Workspace {
                 if open { T.fg } else { T.muted },
             ))
             .child(ui::i18n::t("New tab"))
+            .with_tooltip(tip)
     }
 }
