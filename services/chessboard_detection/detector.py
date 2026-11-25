@@ -105,6 +105,11 @@ def _best_grid_axes(
             y_lines, y_error = _fit_lines(
                 matched_cells[:, 1], matched_regions[:, 1], matched_regions[:, 3], height
             )
+            # The fitted sides should still give nearly square cells at the image edges.
+            x_pitch = (x_lines[-1] - x_lines[0]) / 8
+            y_pitch = (y_lines[-1] - y_lines[0]) / 8
+            if abs(x_pitch - y_pitch) > max(1, 0.05 * pitch):
+                continue
             score = (support, -(x_error + y_error))
             if score > best_score:
                 best = (x_lines, y_lines, support)

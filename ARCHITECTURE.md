@@ -21,6 +21,9 @@ Python/OpenCV prototype. Its detector maps a screenshot to an 8×8 grid in sourc
 The CLI handles image decoding, JSON output and diagnostic overlays. The point-based output
 can be consumed by a future piece classifier or a background import task in Fast. The service
 runs outside GPUI and Cargo and needs no Fast profile.
+The demo provides a color-based detector for one grid and a line-based detector for multiple
+grids. Both return intersections in source pixels and can be compared with the same fixture
+benchmark.
 
 ## Release packaging
 

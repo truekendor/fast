@@ -11,7 +11,7 @@ environment. Use a PNG screenshot for the most reliable color matching.
 ```sh
 python -m pip install -r services/chessboard_detection/requirements.txt
 python -B -m services.chessboard_detection docs/screenshots/analyse.png --overlay detected-board.png
-python -B -m unittest services.chessboard_detection.test_detector
+python -B -m unittest services.chessboard_detection.test_detector services.chessboard_detection.test_line_detector
 ```
 
 The CLI writes one JSON object to stdout. `grid.intersections` contains nine rows of nine
@@ -28,6 +28,24 @@ full, axis-aligned boards with solid cell colors. Textured or heavily compressed
 clipped boards and perspective views may fail. Piece recognition and board orientation are
 outside this geometry service.
 
+## Line detector
+
+The experimental line detector locates alternating horizontal and vertical edges using
+OpenCV at several scales. It fits seven internal lines per axis, tests for alternating
+contrast at their crossings, and checks for an extra row or column of crossings at the
+boundary. The fit allows 2 pixels of error in line position and checks the measured gaps
+against the fitted pitch with the same tolerance. Horizontal and vertical pitches must
+agree within 2 pixels, with a tighter limit for small boards.
+
+```sh
+python -B -m services.chessboard_detection services/chessboard_detection/fixtures/screenshots/images/chessboard_detect_0100.jpg --detector lines --overlay lines.png
+```
+
+The line detector returns `grids`, a list in image order.
+Each element contains `intersections` and `matched_crossings`, the number of supporting
+internal intersections out of 49. If there is no match, `grids` is empty. Python callers can
+use `detect_line_grids(image)`.
+
 ## Labelled screenshots
 
 `fixtures/screenshots` contains the 15 original screenshots selected from the board detection
@@ -41,11 +59,14 @@ training split.
 python -B -m services.chessboard_detection.benchmark
 ```
 
-The benchmark compares the grid's bounding box with the annotated boards. An intersection over
-union (IoU) of at least 0.90 counts as a match. It reports frames with a match, matched boards
-out of all labels, and how many returned grids match a label. IoU measures the board boundary.
-The smaller detector tests also compare all 81 grid intersections directly.
+The benchmark runs both detectors by default. Use `--detector colors` or `--detector lines`
+to run one. It compares the returned grid bounds with the YOLO boxes. An intersection over
+union (IoU) of at least 0.90 counts as a match and each label can be matched once. It reports
+frames with a match, matched boards out of all labels, and how many returned grids match a
+label. IoU measures the board boundary. The detector tests also compare grid intersections
+directly.
 
-The initial detector returned six matching grids across 15 frames, covering six of the 42
-labelled boards. It found a match in one of seven frames with one board and five of eight
-frames with multiple boards. The regression test checks that those six frames still match.
+On this sample the color detector matches 6 of 42 labels, including 5 of 35 in multi-board
+frames. The line detector matches 41 of 42 labels, including all 35 in multi-board frames.
+Three additional grids in `0057` and `0082` correspond to board thumbnails absent from the
+labels. The line detector misses the board in `0033`.

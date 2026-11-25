@@ -4,6 +4,7 @@ Settings › Changelog shows this file. Describe the finished changes since each
 
 ## 0.1.4
 
+- Chessboard detection: the line detector can find multiple 8×8 grids in one screenshot.
 - Chessboard detection: the standalone demo finds an 8×8 grid in 2D screenshots and can save an overlay.
 - Analyse: add a local engine from the Engines panel with the same file picker as Settings.
 - Analyse: the scoresheet and board dividers highlight when you hover over them to resize.
