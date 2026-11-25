@@ -137,4 +137,4 @@ two-pixel minimum. The native integration test checks all three images and their
 `fast --recognize-board IMAGE OUTPUT.json` classifies the 64 cells of every detected board
 with the embedded MobileNet and classifier head. The JSON includes `placement` in image order
 and `flipped_placement` for a board rotated by 180 degrees. Both are the first field of FEN.
-See the [model provenance and parity checks](../../crates/piece_recognition/README.md).
+See the [embedded model and its provenance](../../crates/piece_recognition/README.md).

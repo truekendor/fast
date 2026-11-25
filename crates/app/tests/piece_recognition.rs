@@ -3,7 +3,7 @@
 use std::{path::Path, process::Command};
 
 #[test]
-/// Recognizes the same board placement as the web model from a clean working directory.
+/// Recognizes the expected board placement from a clean working directory.
 fn recognizes_screenshot_with_embedded_weights() {
     let report = image_command("--recognize-board", "images/chessboard_detect_0002.png");
     let boards = report["boards"].as_array().unwrap();
