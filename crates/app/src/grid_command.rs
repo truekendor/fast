@@ -3,10 +3,10 @@
 use std::{ffi::OsStr, path::Path, process::ExitCode};
 
 use anyhow::{Context, anyhow};
-use chess_core::shakmaty::{Board, Piece, Square};
 use chessboard_detection::Grid;
-use piece_recognition::Classifier;
 use serde::Serialize;
+
+use crate::board_image;
 
 /// Represents one detected grid in the JSON output.
 #[derive(Serialize)]
@@ -78,78 +78,28 @@ pub(crate) fn run_if_requested() -> Option<ExitCode> {
 
 /// Decodes the screenshot, detects its grids, and recognizes pieces when requested.
 fn detect(input: &Path, output: &Path, scalar: bool, recognize: bool) -> anyhow::Result<()> {
-    let image = image::ImageReader::open(input)
-        .with_context(|| format!("could not open {}", input.display()))?
-        .with_guessed_format()?
-        .decode()
-        .with_context(|| format!("could not decode {}", input.display()))?
-        .into_rgb8();
-    // Use the same BT.601 grayscale conversion as the OpenCV benchmark.
-    let pixels: Vec<_> = image
-        .as_raw()
-        .chunks_exact(3)
-        .map(|pixel| {
-            let (red, green, blue) = (
-                u32::from(pixel[0]),
-                u32::from(pixel[1]),
-                u32::from(pixel[2]),
-            );
-            ((red * 9798 + green * 19235 + blue * 3735 + 16384) >> 15) as u8
-        })
-        .collect();
-    let detect = if scalar {
-        chessboard_detection::detect_grids_scalar
-    } else {
-        chessboard_detection::detect_grids
-    };
-    let grids = detect(&pixels, image.width() as usize, image.height() as usize);
+    let image = board_image::read(input)?;
     if recognize {
-        let boards = if grids.is_empty() {
-            Vec::new()
-        } else {
-            let classifier =
-                Classifier::embedded().context("could not load the piece classifier")?;
-            grids
-                .into_iter()
-                .map(|grid| recognize_pieces(&classifier, &image, grid))
-                .collect::<anyhow::Result<_>>()?
-        };
+        let boards = board_image::recognize(&image, scalar)?
+            .into_iter()
+            .map(|board_image::RecognizedBoard { grid, mut board }| {
+                let placement = board.board_fen().to_string();
+                board.rotate_180();
+                BoardReport {
+                    grid: grid.into(),
+                    placement,
+                    flipped_placement: board.board_fen().to_string(),
+                }
+            })
+            .collect();
         write_report(output, &RecognitionReport { boards })
     } else {
-        let grids = grids.into_iter().map(GridReport::from).collect();
+        let grids = board_image::detect(&image, scalar)
+            .into_iter()
+            .map(GridReport::from)
+            .collect();
         write_report(output, &Report { grids })
     }
-}
-
-/// Classifies the 64 RGB cells in image order and formats their two board orientations.
-fn recognize_pieces(
-    classifier: &Classifier,
-    image: &image::RgbImage,
-    grid: Grid,
-) -> anyhow::Result<BoardReport> {
-    let mut board = Board::empty();
-    for index in 0..64 {
-        let (row, col) = (index / 8, index % 8);
-        let [left, top] = grid.intersections[row][col].map(|coordinate| coordinate.round() as u32);
-        let [right, bottom] =
-            grid.intersections[row + 1][col + 1].map(|coordinate| coordinate.round() as u32);
-        let (width, height) = (right - left, bottom - top);
-        let cell = image::imageops::crop_imm(image, left, top, width, height).to_image();
-        if let Some(piece) = classifier
-            .predict(cell.as_raw(), width as usize, height as usize)?
-            .piece()
-            .and_then(Piece::from_char)
-        {
-            board.set_piece_at(Square::new(((7 - row) * 8 + col) as u32), piece);
-        }
-    }
-    let placement = board.board_fen().to_string();
-    board.rotate_180();
-    Ok(BoardReport {
-        grid: grid.into(),
-        placement,
-        flipped_placement: board.board_fen().to_string(),
-    })
 }
 
 /// Writes a complete JSON file without replacing an existing path.

@@ -100,6 +100,7 @@ mod engines_panel;
 mod explorer_panel;
 mod files;
 mod game_card;
+mod image_import;
 mod line_preview;
 mod moves_table;
 mod nav_bar;
@@ -191,6 +192,7 @@ pub struct AnalyseScreen {
     limit_controls: Entity<panels::limit::SearchLimitControls>,
     /// Edit position is open, with the position being set up.
     editor: Option<PositionEditor>,
+    image_import: Option<image_import::ImageImport>,
     context_menu: Option<(NodeId, Point<Pixels>)>,
     /// The board toolbar's copy menu is open.
     copy_menu: bool,
@@ -433,6 +435,7 @@ impl AnalyseScreen {
             fen_input,
             limit_controls,
             editor: None,
+            image_import: None,
             context_menu: None,
             copy_menu: false,
             scoresheet_scroll: ScrollHandle::new(),
@@ -911,6 +914,7 @@ impl Render for AnalyseScreen {
         self.sync_online(cx);
         let menu = self.render_context_menu(cx);
         let status_bar = self.render_status_bar(cx);
+        let image_import = self.render_image_import(cx);
         let mut side = Some(
             v_flex()
                 .gap(px(8.))
@@ -1007,9 +1011,11 @@ impl Render for AnalyseScreen {
             }))
             .children(menu);
         v_flex()
+            .relative()
             .size_full()
             .child(columns)
             .child(status_bar)
+            .children(image_import.map(|dialog| deferred(dialog).with_priority(3)))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|screen, _, _, cx| {

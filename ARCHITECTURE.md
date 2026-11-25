@@ -40,6 +40,9 @@ reuses one CPU classifier for all detected boards. `piece_recognition` embeds th
 weights and runs them through `tract` in process. Each recognized board includes its grid and
 the piece-placement field of FEN in both orientations. The export and TensorFlow.js reference
 tools run separately from Cargo and the Fast executable.
+Analyse calls the same Rust image service on a background task, then shows the source crop
+and predicted positions in a dialog. A valid selection opens in a new Analyse tab. A guess
+that needs correction can be sent to the position editor.
 
 ## Release packaging
 

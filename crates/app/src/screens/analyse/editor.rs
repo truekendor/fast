@@ -78,6 +78,16 @@ impl PositionEditor {
         }
     }
 
+    /// Starts an editable position from recognized pieces without unobserved castling rights.
+    pub(super) fn from_board(board: Board, turn: Color) -> Self {
+        Self {
+            board,
+            turn,
+            castling: [false; 4],
+            ..Self::from_position(&Chess::default())
+        }
+    }
+
     /// Places the brush, or erases. Clicking a piece with the same piece removes it.
     pub fn paint(&mut self, square: Square, erase: bool) {
         match self.brush.filter(|_| !erase) {
@@ -184,6 +194,11 @@ impl AnalyseScreen {
             return;
         }
         let editor = PositionEditor::from_position(&self.analysed_pos());
+        self.show_editor(editor, cx);
+    }
+
+    /// Shows an editable board without changing the current game until it is applied.
+    pub(super) fn show_editor(&mut self, editor: PositionEditor, cx: &mut Context<Self>) {
         let board = editor.board.clone();
         self.editor = Some(editor);
         self.board

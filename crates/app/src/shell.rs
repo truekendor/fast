@@ -66,6 +66,7 @@ actions!(
         TabBack,
         TabForward,
         OpenGame,
+        ImportPositionImage,
         SavePgnAs,
         PasteGame,
         CopyFen,
@@ -857,6 +858,11 @@ impl Workspace {
             this.analyse
                 .update(cx, |screen, cx| screen.open_file(window, cx));
             this.set_mode(Mode::Analyse, cx);
+        }))
+        .on_action(cx.listener(|this, _: &ImportPositionImage, _, cx| {
+            this.set_mode(Mode::Analyse, cx);
+            this.analyse
+                .update(cx, |screen, cx| screen.import_image(cx));
         }))
         .on_action(cx.listener(|this, _: &SavePgnAs, _, cx| {
             this.analyse.update(cx, |screen, cx| screen.save_pgn_as(cx));

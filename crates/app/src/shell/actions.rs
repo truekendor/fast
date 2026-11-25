@@ -13,6 +13,10 @@ pub(super) fn app_menus() -> Vec<gpui::Menu> {
             MenuItem::action(ui::i18n::t("Close tab"), CloseTab),
             MenuItem::action(ui::i18n::t("Reopen closed tab"), ReopenTab),
             MenuItem::action(ui::i18n::t("Open PGN or FEN…"), OpenGame),
+            MenuItem::action(
+                ui::i18n::t("Import position from image…"),
+                ImportPositionImage,
+            ),
             MenuItem::separator(),
             MenuItem::action(ui::i18n::t("Save to My games"), SaveGame),
             MenuItem::action(ui::i18n::t("Save as PGN…"), SavePgnAs),

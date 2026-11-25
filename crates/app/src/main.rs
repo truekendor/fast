@@ -9,6 +9,7 @@ mod analysis_store;
 mod app_update;
 mod assets;
 mod backup;
+mod board_image;
 mod config;
 mod config_writer;
 mod controls;

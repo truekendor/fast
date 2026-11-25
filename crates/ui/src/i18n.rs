@@ -225,6 +225,26 @@ pub fn translate(language: Language, text: &str) -> &str {
             "Clear" => "Leeren",
             "Search" => "Suchen",
             "Import" => "Importieren",
+            "Import position from image…" => "Stellung aus Bild importieren…",
+            "Import position from image" => "Stellung aus Bild importieren",
+            "Choose a board image" => "Brettbild auswählen",
+            "Looking for chessboards…" => "Schachbretter werden gesucht…",
+            "Could not read the image. Choose a PNG or JPEG file." => {
+                "Das Bild konnte nicht gelesen werden. Wählen Sie eine PNG- oder JPEG-Datei."
+            }
+            "No chessboards found in this image." => {
+                "In diesem Bild wurden keine Schachbretter gefunden."
+            }
+            "Recognized position" => "Erkannte Stellung",
+            "Rotate position" => "Stellung drehen",
+            "White to move" => "Weiß am Zug",
+            "Black to move" => "Schwarz am Zug",
+            "Open position" => "Stellung öffnen",
+            "This position needs corrections before it can be opened." => {
+                "Diese Stellung muss vor dem Öffnen korrigiert werden."
+            }
+            "Boards in the image" => "Bretter im Bild",
+            "Board {}" => "Brett {}",
             "Export" => "Exportieren",
             "Reopen" => "Wieder öffnen",
             "Repertoires" => "Repertoires",
