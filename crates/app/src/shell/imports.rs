@@ -7,6 +7,46 @@ use crate::analysis_import::{
     ClipboardImport, ImageInput, clipboard_input, read_game_files, split_files,
 };
 
+/// Confirms that the workspace can accept the files currently held over it.
+pub(super) fn file_drop_overlay() -> impl IntoElement {
+    div()
+        .absolute()
+        .inset_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .p(px(16.))
+        .opacity(0.)
+        .drag_over::<gpui::ExternalPaths>(|style, _, _, _| style.opacity(1.))
+        .bg(rgb(T.bg).alpha(0.76))
+        .child(
+            v_flex()
+                .max_w_full()
+                .w(px(376.))
+                .items_center()
+                .gap(px(8.))
+                .p(px(24.))
+                .rounded(px(6.))
+                .border_2()
+                .border_dashed()
+                .border_color(rgb(T.accent))
+                .bg(rgb(T.surface))
+                .text_center()
+                .child(ui::widgets::icon("icons/download.svg", px(28.), T.accent))
+                .child(
+                    div()
+                        .text_as(18., T.fg)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(ui::i18n::t("Drop files to import")),
+                )
+                .child(
+                    div()
+                        .text_as(13., T.fg_2)
+                        .child(ui::i18n::t("Screenshots and chess files open in Analyse.")),
+                ),
+        )
+}
+
 impl Workspace {
     /// Opens a fresh Analyse tab for clipboard data received by the new-tab picker.
     pub(super) fn paste_analysis(&mut self, window: &mut Window, cx: &mut Context<Self>) {

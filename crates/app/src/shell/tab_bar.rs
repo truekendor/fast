@@ -104,7 +104,6 @@ impl Workspace {
         let close = cx.entity();
         v_flex()
             .id("new-tab-picker")
-            .group("new-tab-picker")
             .absolute()
             .inset_0()
             .occlude()
@@ -204,6 +203,7 @@ impl Workspace {
                             ))
                     }),
             )
+            .child(super::imports::file_drop_overlay())
     }
 
     /// Shows where to drop files and gives the picker a keyboard-accessible paste button.
@@ -223,9 +223,6 @@ impl Workspace {
             .border_dashed()
             .border_color(rgb(T.border_strong))
             .bg(rgb(T.surface))
-            .group_drag_over::<gpui::ExternalPaths>("new-tab-picker", |style| {
-                style.border_color(rgb(T.accent)).bg(rgb(T.selected))
-            })
             .child(ui::widgets::icon("icons/download.svg", px(20.), T.accent))
             .child(
                 div()

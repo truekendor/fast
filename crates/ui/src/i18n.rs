@@ -233,6 +233,10 @@ pub fn translate(language: Language, text: &str) -> &str {
                 "Das Bild konnte nicht gelesen werden. Verwenden Sie PNG, JPEG, BMP oder WebP."
             }
             "Drop a screenshot or chess file" => "Screenshot oder Schachdatei hier ablegen",
+            "Drop files to import" => "Dateien zum Importieren ablegen",
+            "Screenshots and chess files open in Analyse." => {
+                "Screenshots und Schachdateien werden in der Analyse geöffnet."
+            }
             "Paste game or image" => "Partie oder Bild einfügen",
             "The clipboard is empty." => "Die Zwischenablage ist leer.",
             "Some images could not be read." => "Einige Bilder konnten nicht gelesen werden.",
