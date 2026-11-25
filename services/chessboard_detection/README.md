@@ -100,3 +100,28 @@ The comparison script runs on the 15 anonymized fixtures. It uses Python/OpenCV 
 the reference implementation, with its square check disabled to match the Rust detector.
 Both implementations find 40 of 41 boards at IoU ≥ 0.90 and 39 at IoU ≥ 0.95, with no extra
 grids. Both find all 33 labels in multi-board frames at IoU ≥ 0.90 and miss `0033`.
+
+The native crossing filter selects AVX at runtime on supported x86-64 processors. Other
+processors use the portable scalar filter in the same executable. Append `--scalar` after
+the output path to force the scalar implementation for diagnostics. The comparison checks
+that automatic and scalar modes return identical JSON. They agree on the 15 original
+fixtures and the three occluded variants.
+
+### Occluded grids
+
+`fixtures/screenshots/occlusions` contains three copies of existing screenshots with a
+piece from the `cburnett` set drawn on top of a line or crossing. The copies reuse their
+original YOLO labels and dimensions, and every pixel outside the added piece is unchanged.
+The standard 15-image benchmark still uses the originals.
+
+| Screenshot | Added piece | Occluded point in source pixels |
+| --- | --- | --- |
+| `0002` | White pawn on a vertical line | `(1013, 310)` |
+| `0082` | Black knight at a crossing | `(944, 548)` |
+| `0094` | White rook at a crossing on one of twelve boards | `(526, 376)` |
+
+```powershell
+python -B -m services.chessboard_detection.compare_rust target/release/fast.exe --occlusions
+```
+
+Rust and Python each find all 14 labelled boards in the occluded fixtures at IoU ≥ 0.95.
