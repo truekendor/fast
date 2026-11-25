@@ -42,10 +42,11 @@ the piece-placement field of FEN in both orientations. The export and TensorFlow
 tools run separately from Cargo and the Fast executable.
 Analyse calls the same Rust image service on a background task, then outlines the detected
 boards on the original screenshot beside the position preview. A manual square can supply
-the 8×8 cell boundaries to the same classifier when automatic detection misses a board. A valid selection opens in a new Analyse tab. A guess
-that needs correction can be sent to the position editor. The Analyse import module routes
-dropped paths and native clipboard entries to that same preview or to the existing chess
-parsers. It reads screenshot and notation files on background tasks.
+the 8×8 cell boundaries to the same classifier when automatic detection misses a board. A guess
+that needs correction can be sent to the position editor. The workspace routes dropped files
+and native clipboard entries from Analyse and the new-tab picker to that same preview or to
+the existing chess parsers. It reads screenshots and notation files on background tasks. The
+picker reserves an Analyse tab for a screenshot so confirming the position fills that tab.
 
 ## Release packaging
 

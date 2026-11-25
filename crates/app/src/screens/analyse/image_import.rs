@@ -25,6 +25,7 @@ pub(super) struct BoardChoices {
     sources: Vec<Screenshot>,
     source: usize,
     selected: usize,
+    reuse_tab: bool,
     manual: Option<ManualSelection>,
     rotated: bool,
     turn: Color,
@@ -139,14 +140,19 @@ impl AnalyseScreen {
             cx,
             move |path, cx| {
                 let _ = this.update(cx, |screen, cx| {
-                    screen.start_image_import(vec![ImageInput::File(path)], cx);
+                    screen.start_image_import(vec![ImageInput::File(path)], false, cx);
                 });
             },
         );
     }
 
     /// Uses the same preview for images from the picker, clipboard and file drops.
-    pub(crate) fn start_image_import(&mut self, inputs: Vec<ImageInput>, cx: &mut Context<Self>) {
+    pub(crate) fn start_image_import(
+        &mut self,
+        inputs: Vec<ImageInput>,
+        reuse_tab: bool,
+        cx: &mut Context<Self>,
+    ) {
         if inputs.is_empty() || self.image_import.is_some() {
             return;
         }
@@ -180,6 +186,7 @@ impl AnalyseScreen {
                         sources,
                         source: 0,
                         selected: 0,
+                        reuse_tab,
                         manual: None,
                         rotated: false,
                         turn: Color::White,
@@ -256,15 +263,20 @@ impl AnalyseScreen {
         cx.notify();
     }
 
-    /// Opens a valid position in a new tab or sends an invalid guess to the editor.
+    /// Opens a valid position or sends an invalid guess to the editor.
     fn open_image_position(
         &mut self,
         position: Result<Chess, PositionEditor>,
+        reuse_tab: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.image_import = None;
         match position {
+            Ok(position) if reuse_tab => {
+                self.close_editor(cx);
+                self.load_tree(GameTree::from_position(position), window, cx);
+            }
             Ok(position) => {
                 let workspace = self.workspace.clone();
                 window.defer(cx, move |window, cx| {
@@ -330,6 +342,7 @@ impl AnalyseScreen {
         let editor = PositionEditor::from_board(board, choices.turn);
         let position = editor.position().map_err(|_| editor);
         let can_open = position.is_ok();
+        let reuse_tab = choices.reuse_tab;
         let action = if can_open {
             "Open position"
         } else {
@@ -375,7 +388,7 @@ impl AnalyseScreen {
                 btn("confirm-image-position", action)
                     .primary()
                     .on_click(this.listen(move |screen, window, cx| {
-                        screen.open_image_position(position.clone(), window, cx)
+                        screen.open_image_position(position.clone(), reuse_tab, window, cx)
                     })),
             )
     }

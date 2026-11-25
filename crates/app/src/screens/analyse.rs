@@ -1011,14 +1011,8 @@ impl Render for AnalyseScreen {
             }))
             .children(menu);
         v_flex()
-            .id("analyse-screen")
             .relative()
             .size_full()
-            .on_drop(
-                cx.listener(|screen, paths: &gpui::ExternalPaths, window, cx| {
-                    screen.drop_import_files(paths.paths().to_vec(), window, cx)
-                }),
-            )
             .child(columns)
             .child(status_bar)
             .children(image_import.map(|dialog| deferred(dialog).with_priority(3)))

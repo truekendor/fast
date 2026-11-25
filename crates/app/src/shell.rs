@@ -40,6 +40,7 @@ use self::{
 
 mod actions;
 mod chrome;
+mod imports;
 mod session;
 mod tab_bar;
 mod tabs;
@@ -672,7 +673,7 @@ impl Render for Workspace {
                 if !on_button {
                     contexts.push_str(&format!(" {SPACE_CONTEXT}"));
                 }
-                if self.mode == Mode::Analyse {
+                if self.mode == Mode::Analyse || self.new_tab_menu_open {
                     contexts.push_str(&format!(" {ANALYSE_PASTE_CONTEXT}"));
                 }
                 root.key_context(contexts.as_str())
@@ -690,10 +691,25 @@ impl Render for Workspace {
                     .children(path_bar)
                     .child(
                         div()
+                            .id("workspace-content")
                             .relative()
                             .flex_1()
                             .min_h_0()
                             .w_full()
+                            .when(
+                                self.mode == Mode::Analyse && !self.new_tab_menu_open,
+                                |area| {
+                                    area.on_drop(cx.listener(
+                                        |workspace, files: &gpui::ExternalPaths, window, cx| {
+                                            workspace.import_analysis_files(
+                                                files.paths().to_vec(),
+                                                window,
+                                                cx,
+                                            );
+                                        },
+                                    ))
+                                },
+                            )
                             .child(body)
                             .when(self.new_tab_menu_open, |area| {
                                 area.child(self.new_tab_picker(cx))
@@ -869,9 +885,7 @@ impl Workspace {
             this.analyse.update(cx, |screen, cx| screen.save_pgn_as(cx));
         }))
         .on_action(cx.listener(|this, _: &PasteGame, window, cx| {
-            this.analyse
-                .update(cx, |screen, cx| screen.paste_game(window, cx));
-            this.set_mode(Mode::Analyse, cx);
+            this.paste_analysis(window, cx);
         }))
         .on_action(cx.listener(|this, _: &CopyFen, _, cx| {
             this.analyse

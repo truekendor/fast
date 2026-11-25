@@ -63,16 +63,16 @@ impl Workspace {
             ),
         ];
         // Two per row, in one column with the header so their edges line up.
-        let mut cards = div().grid().grid_cols(2).gap(px(16.)).w_full();
+        let mut cards = div().grid().grid_cols(2).gap(px(12.)).w_full();
         for (index, (mode, icon_path, title, description)) in choices.into_iter().enumerate() {
             cards = cards.child(
                 v_flex()
                     .id(("new-tab-card", index))
                     .min_w_0()
-                    .min_h(px(132.))
-                    .p(px(24.))
-                    .gap(px(10.))
-                    .rounded(px(12.))
+                    .min_h(px(108.))
+                    .p(px(16.))
+                    .gap(px(8.))
+                    .rounded(px(6.))
                     .bg(rgb(T.surface))
                     .border_as(T.border)
                     .cursor_pointer()
@@ -104,9 +104,16 @@ impl Workspace {
         let close = cx.entity();
         v_flex()
             .id("new-tab-picker")
+            .group("new-tab-picker")
             .absolute()
             .inset_0()
             .occlude()
+            .overflow_y_scroll()
+            .on_drop(
+                cx.listener(|workspace, files: &gpui::ExternalPaths, window, cx| {
+                    workspace.import_analysis_files(files.paths().to_vec(), window, cx);
+                }),
+            )
             .items_center()
             .justify_center()
             .p(px(16.))
@@ -115,7 +122,7 @@ impl Workspace {
                 v_flex()
                     .w_full()
                     .max_w(px(820.))
-                    .gap(px(20.))
+                    .gap(px(12.))
                     .child(
                         h_flex()
                             .w_full()
@@ -139,6 +146,7 @@ impl Workspace {
                                     })),
                             ),
                     )
+                    .child(self.new_tab_import_target(cx))
                     .child(cards)
                     .child({
                         let random = cx.entity();
@@ -193,6 +201,41 @@ impl Workspace {
                                 }),
                             ))
                     }),
+            )
+    }
+
+    /// Shows where to drop files and gives the picker a keyboard-accessible paste button.
+    fn new_tab_import_target(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let paste = if cfg!(target_os = "macos") {
+            "⌘V"
+        } else {
+            "Ctrl+V"
+        };
+        h_flex()
+            .id("new-tab-import")
+            .min_h(px(64.))
+            .p(px(14.))
+            .gap(px(12.))
+            .rounded(px(6.))
+            .border_2()
+            .border_dashed()
+            .border_color(rgb(T.border_strong))
+            .bg(rgb(T.surface))
+            .group_drag_over::<gpui::ExternalPaths>("new-tab-picker", |style| {
+                style.border_color(rgb(T.accent)).bg(rgb(T.selected))
+            })
+            .child(ui::widgets::icon("icons/download.svg", px(20.), T.accent))
+            .child(
+                div()
+                    .flex_1()
+                    .text_as(14., T.fg)
+                    .child(ui::i18n::t("Drop a screenshot or chess file")),
+            )
+            .child(
+                btn("paste-new-tab", "Paste")
+                    .compact()
+                    .tooltip(paste)
+                    .on_click(cx.entity().listen(Self::paste_analysis)),
             )
     }
 
@@ -497,8 +540,9 @@ impl Workspace {
             .tooltip(move |window, cx| {
                 gpui_component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
             })
-            .on_click(cx.entity().listen_event(move |this, _, _, cx| {
+            .on_click(cx.entity().listen_event(move |this, _, window, cx| {
                 this.new_tab_menu_open = !this.new_tab_menu_open;
+                this.focus.focus(window, cx);
                 cx.notify();
             }))
             .child(ui::widgets::icon(

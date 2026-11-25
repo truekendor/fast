@@ -188,16 +188,6 @@ impl Workspace {
             .update(cx, |screen, cx| screen.load_tree(tree, window, cx));
     }
 
-    /// Presents imported screenshots in the active Analyse tab.
-    pub(crate) fn import_analysis_images(
-        &mut self,
-        images: Vec<crate::analysis_import::ImageInput>,
-        cx: &mut Context<Self>,
-    ) {
-        self.analyse
-            .update(cx, |screen, cx| screen.start_image_import(images, cx));
-    }
-
     pub fn open_pgn(&mut self, pgn: &str, ply: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.new_tab(Mode::Analyse, window, cx);
         self.analyse
