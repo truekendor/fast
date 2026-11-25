@@ -373,10 +373,10 @@ impl AnalyseScreen {
                 Ok((png, path)) => {
                     let image = gpui::Image::from_bytes(gpui::ImageFormat::Png, png);
                     cx.write_to_clipboard(ClipboardItem::new_image(&image));
-                    screen.model.toast(
-                        format!("Board image copied and saved to {}", path.display()),
-                        cx,
-                    );
+
+                    screen.model.update(cx, |model, cx| {
+                        model.toast_for_file("Board image copied and saved", path, cx);
+                    });
                 }
                 Err(err) => screen
                     .model

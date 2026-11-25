@@ -737,7 +737,7 @@ impl Render for Workspace {
                     cx.stop_propagation();
                 }
             }))
-            .child(self.toasts(cx))
+            .child(self.toasts(window, cx))
             .when(client_drawn && !window.is_maximized(), |root| {
                 root.children(resize_handles())
             });

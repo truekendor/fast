@@ -1,6 +1,23 @@
 //! The top bar: the logo, mode switch, breadcrumb or path, search, engine button and toasts.
 
 use super::*;
+use std::path::Path;
+
+/// Displays a saved file path on its own line, wrapping between path components.
+fn toast_path(path: &str) -> Div {
+    h_flex()
+        .items_start()
+        .flex_wrap()
+        .font_family(ui::MONO)
+        .text_as(13., T.fg_2)
+        .children(path.split_inclusive(std::path::is_separator).map(|part| {
+            div()
+                .flex_none()
+                .min_w_0()
+                .max_w_full()
+                .child(part.to_owned())
+        }))
+}
 
 impl Workspace {
     /// Runs an Analyse-only shortcut, ignored on other screens where its effect
@@ -673,36 +690,94 @@ impl Workspace {
             )
     }
 
-    pub(super) fn toasts(&self, cx: &App) -> impl IntoElement + use<> {
-        let model = self.model.read(cx);
+    /// Shows notifications with keyboard and mouse access to their actions.
+    pub(super) fn toasts(&self, window: &mut Window, cx: &mut App) -> impl IntoElement + use<> {
         let mut column = v_flex()
             .absolute()
             .bottom(px(20.))
             .right(px(24.))
             .gap(px(8.));
-        for toast in &model.toasts {
-            let action = toast.action.as_ref().map(|action| {
-                let (run, id, model) = (action.run.clone(), toast.id, self.model.clone());
-                btn(("toast-action", toast.id as usize), action.label.clone())
-                    .compact()
-                    .on_click(move |window, cx| {
-                        run(window, cx);
-                        model.update(cx, |model, cx| model.dismiss_toast(id, cx));
-                    })
-            });
-            column = column.child(
-                h_flex()
-                    .max_w(px(420.))
-                    .gap(px(10.))
-                    .px(px(14.))
-                    .py(px(10.))
-                    .rounded(px(6.))
-                    .bg(rgb(T.selected))
-                    .border_as(T.border_strong)
-                    .text_as(14., T.fg)
-                    .child(div().flex_1().min_w_0().child(toast.text.clone()))
-                    .children(action),
-            );
+
+        for toast in self.model.read(cx).toasts.clone() {
+            let toast_id = toast.id;
+
+            // might not be necessary ?
+            // Keep paths with invalid UTF-8 visible by replacing invalid sequences with U+FFFD.
+            // Path::to_str returns None for these paths.
+            // https://doc.rust-lang.org/std/path/struct.Path.html#method.to_string_lossy
+            let display_path = toast.path.as_deref().map(Path::to_string_lossy);
+            let message = v_flex()
+                .flex_1()
+                .min_w_0()
+                .gap(px(4.))
+                .child(toast.text.clone())
+                .children(display_path.as_deref().map(toast_path));
+
+            let mut row = h_flex()
+                .id(("toast", toast_id as usize))
+                .max_w(px(420.))
+                .gap(px(10.))
+                .px(px(14.))
+                .py(px(10.))
+                .rounded(px(6.))
+                .bg(rgb(T.selected))
+                .border_as(T.border_strong)
+                .text_as(14., T.fg)
+                .child(message);
+
+            if let Some(action) = toast.action {
+                let model = self.model.clone();
+                let run = action.run;
+
+                let activate = move |window: &mut Window, cx: &mut App| {
+                    run(window, cx);
+                    model.update(cx, |model, cx| model.dismiss_toast(toast_id, cx));
+                };
+
+                if action.activate_on_toast_body {
+                    let focus = window
+                        .use_keyed_state(("toast-focus", toast_id as usize), cx, |_, cx| {
+                            cx.focus_handle().tab_stop(true)
+                        })
+                        .read(cx)
+                        .clone();
+
+                    let activate_by_key = activate.clone();
+                    let accessible_label = if let Some(path) = display_path {
+                        format!("{}. {path}. {}", toast.text, action.label)
+                    } else {
+                        format!("{}. {}", toast.text, action.label)
+                    };
+
+                    row = row
+                        .key_context("FastButton")
+                        .track_focus(&focus)
+                        .role(gpui::Role::Button)
+                        .aria_label(accessible_label)
+                        .cursor_pointer()
+                        .hover(|style| style.bg(rgb(T.hover)))
+                        .focus_visible(|style| style.border_2().border_color(rgb(T.accent)))
+                        .on_click(move |_click_event, window, cx| activate(window, cx))
+                        .on_key_down(move |event, window, cx| {
+                            let is_activation_key =
+                                matches!(event.keystroke.key.as_str(), "enter" | "space")
+                                    && !event.keystroke.modifiers.modified();
+
+                            if is_activation_key {
+                                activate_by_key(window, cx);
+                                cx.stop_propagation();
+                            }
+                        });
+                } else {
+                    row = row.child(
+                        btn(("toast-action", toast_id as usize), action.label.clone())
+                            .compact()
+                            .on_click(activate),
+                    );
+                }
+            }
+
+            column = column.child(row);
         }
         deferred(column)
     }

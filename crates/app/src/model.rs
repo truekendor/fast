@@ -37,20 +37,39 @@ pub struct PendingPath {
     pub on_paths: PathCallback,
 }
 
+/// A temporary notification about an operation.
+#[derive(Clone)]
 pub struct Toast {
     pub id: u64,
     pub text: SharedString,
-    /// A button on the toast, such as "Show details".
+    /// The saved file shown below the message, when applicable.
+    pub path: Option<PathBuf>,
+    /// An optional action the user can take from the notification.
     pub action: Option<ToastAction>,
 }
 
-/// What a toast's button does when clicked.
+/// What a toast does when its action is activated.
 pub type ToastRun = std::rc::Rc<dyn Fn(&mut gpui::Window, &mut App)>;
 
-/// A labelled button on a toast and what it does.
+/// A labelled action on either a toast button or the whole toast.
+#[derive(Clone)]
 pub struct ToastAction {
     pub label: SharedString,
     pub run: ToastRun,
+    pub activate_on_toast_body: bool,
+}
+
+/// The message and presentation for a notification before it is queued.
+struct ToastRequest {
+    text: SharedString,
+    kind: ToastKind,
+}
+
+/// The ways a notification can present information and offer an action.
+enum ToastKind {
+    Message,
+    Button { label: SharedString, run: ToastRun },
+    SavedFile(PathBuf),
 }
 
 /// Emitted when something other screens should re-read has changed.
@@ -444,8 +463,15 @@ impl AppModel {
         cx.emit(ModelEvent::Engines);
     }
 
+    /// Shows a short notification.
     pub fn toast(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.push_toast(text.into(), None, cx);
+        self.push_toast(
+            ToastRequest {
+                text: text.into(),
+                kind: ToastKind::Message,
+            },
+            cx,
+        );
     }
 
     /// Shows a toast with a button, such as "Show details". It stays longer than a
@@ -457,37 +483,79 @@ impl AppModel {
         run: impl Fn(&mut gpui::Window, &mut App) + 'static,
         cx: &mut Context<Self>,
     ) {
-        let action = ToastAction {
-            label: ui::i18n::t(label).to_owned().into(),
-            run: std::rc::Rc::new(run),
-        };
-        self.push_toast(text.into(), Some(action), cx);
+        self.push_toast(
+            ToastRequest {
+                text: text.into(),
+                kind: ToastKind::Button {
+                    label: ui::i18n::t(label).into(),
+                    run: std::rc::Rc::new(run),
+                },
+            },
+            cx,
+        );
     }
 
-    /// Removes a toast at once, as after its button was used.
+    /// Shows where a file was saved and opens its folder when clicked.
+    pub fn toast_for_file(
+        &mut self,
+        text: impl Into<SharedString>,
+        path: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        self.push_toast(
+            ToastRequest {
+                text: text.into(),
+                kind: ToastKind::SavedFile(path),
+            },
+            cx,
+        );
+    }
+
+    /// Removes a toast at once, as after its action was used.
     pub fn dismiss_toast(&mut self, id: u64, cx: &mut Context<Self>) {
         self.toasts.retain(|toast| toast.id != id);
         cx.notify();
     }
 
-    fn push_toast(
-        &mut self,
-        text: SharedString,
-        action: Option<ToastAction>,
-        cx: &mut Context<Self>,
-    ) {
+    /// Queues a notification and dismisses it once its display time elapses.
+    fn push_toast(&mut self, request: ToastRequest, cx: &mut Context<Self>) {
+        let (path, action) = match request.kind {
+            ToastKind::Message => (None, None),
+            ToastKind::Button { label, run } => (
+                None,
+                Some(ToastAction {
+                    label,
+                    run,
+                    activate_on_toast_body: false,
+                }),
+            ),
+            ToastKind::SavedFile(path) => {
+                let action = path.parent().map(|folder| {
+                    let folder = folder.to_path_buf();
+                    ToastAction {
+                        label: ui::i18n::t("Open folder").into(),
+                        run: std::rc::Rc::new(move |_, _| crate::storage::reveal_folder(&folder)),
+                        activate_on_toast_body: true,
+                    }
+                });
+                (Some(path), action)
+            }
+        };
+
         let id = self.next_toast;
         self.next_toast += 1;
-        let seconds = if action.is_some() { 10 } else { 5 };
+        let display_seconds = if action.is_some() { 10 } else { 5 };
         self.toasts.push(Toast {
             id,
-            text: ui::i18n::t(&text).to_owned().into(),
+            text: ui::i18n::t(&request.text).to_owned().into(),
+            path,
             action,
         });
+
         cx.notify();
         cx.spawn(async move |this, cx| {
             cx.background_executor()
-                .timer(Duration::from_secs(seconds))
+                .timer(Duration::from_secs(display_seconds))
                 .await;
             let _ = this.update(cx, |model, cx| {
                 model.toasts.retain(|toast| toast.id != id);

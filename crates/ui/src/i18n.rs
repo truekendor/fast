@@ -662,6 +662,7 @@ pub fn translate(language: Language, text: &str) -> &str {
             }
             "Online" => "Online",
             "Open folder" => "Ordner öffnen",
+            "Board image copied and saved" => "Brettbild kopiert und gespeichert",
             "Open in Analyse" => "In Analyse öffnen",
             "Open last game" => "Letzte Partie öffnen",
             "Open output window" => "Ausgabefenster öffnen",
