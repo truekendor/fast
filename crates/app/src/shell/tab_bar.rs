@@ -1,5 +1,6 @@
 //! The tab bar and the new tab picker.
 
+use super::imports::{FileDropTarget, file_drop_border};
 use super::*;
 
 #[derive(Clone)]
@@ -110,7 +111,7 @@ impl Workspace {
             .overflow_y_scroll()
             .on_drop(
                 cx.listener(|workspace, files: &gpui::ExternalPaths, window, cx| {
-                    workspace.import_analysis_files(files.paths().to_vec(), true, window, cx);
+                    workspace.drop_analysis_files(files, FileDropTarget::NewTab, window, cx);
                 }),
             )
             .items_center()
@@ -348,13 +349,19 @@ impl Workspace {
             )
             .drag_over::<DraggedTab>(|style, _, _, _| style.border_color(rgb(T.accent)))
             .when(analysis, |tab| {
-                tab.drag_over::<gpui::ExternalPaths>(|style, _, _, _| {
-                    style.border_color(rgb(T.accent)).bg(rgb(T.selected))
+                tab.drag_over::<gpui::ExternalPaths>(|style, files, _, _| {
+                    style
+                        .border_color(rgb(file_drop_border(files)))
+                        .bg(rgb(T.selected))
                 })
                 .on_drop(cx.listener(
                     move |workspace, files: &gpui::ExternalPaths, window, cx| {
-                        workspace.activate_tab(id, cx);
-                        workspace.import_analysis_files(files.paths().to_vec(), false, window, cx);
+                        workspace.drop_analysis_files(
+                            files,
+                            FileDropTarget::AnalyseTab(id),
+                            window,
+                            cx,
+                        );
                     },
                 ))
             })
@@ -525,12 +532,14 @@ impl Workspace {
         let open = self.new_tab_menu_open;
         h_flex()
             .id("new-tab")
-            .drag_over::<gpui::ExternalPaths>(|style, _, _, _| {
-                style.border_color(rgb(T.accent)).bg(rgb(T.selected))
+            .drag_over::<gpui::ExternalPaths>(|style, files, _, _| {
+                style
+                    .border_color(rgb(file_drop_border(files)))
+                    .bg(rgb(T.selected))
             })
             .on_drop(
                 cx.listener(|workspace, files: &gpui::ExternalPaths, window, cx| {
-                    workspace.import_analysis_files(files.paths().to_vec(), true, window, cx);
+                    workspace.drop_analysis_files(files, FileDropTarget::NewTab, window, cx);
                 }),
             )
             .flex_none()

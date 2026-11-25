@@ -234,6 +234,10 @@ pub fn translate(language: Language, text: &str) -> &str {
             }
             "Drop a screenshot or chess file" => "Screenshot oder Schachdatei hier ablegen",
             "Drop files to import" => "Dateien zum Importieren ablegen",
+            "Unsupported file format" => "Dateiformat wird nicht unterstützt",
+            "Supported formats: PNG, JPEG, BMP, WebP, PGN, PGN.gz, FEN and EPD." => {
+                "Unterstützte Formate: PNG, JPEG, BMP, WebP, PGN, PGN.gz, FEN und EPD."
+            }
             "Screenshots and chess files open in Analyse." => {
                 "Screenshots und Schachdateien werden in der Analyse geöffnet."
             }

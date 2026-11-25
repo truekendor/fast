@@ -47,8 +47,8 @@ that needs correction can be sent to the position editor. The workspace routes d
 and native clipboard entries from Analyse and the new-tab picker to that same preview or to
 the existing chess parsers. Dropping on an Analyse tab header activates that tab first.
 Dropping on New tab uses the picker's import flow, which reserves an Analyse tab for a
-screenshot so confirming the position fills that tab. The workspace reads screenshots and
-notation files on background tasks.
+screenshot so confirming the position fills that tab. The drop prompt checks extensions before
+the drop. The workspace reads screenshots and notation files on background tasks.
 
 ## Release packaging
 

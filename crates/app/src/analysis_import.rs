@@ -54,16 +54,38 @@ pub(crate) fn clipboard_input(item: ClipboardItem) -> Option<ClipboardImport> {
 
 /// Separates screenshot paths from files to be read as chess notation.
 pub(crate) fn split_files(paths: Vec<PathBuf>) -> (Vec<ImageInput>, Vec<PathBuf>) {
-    let (images, games): (Vec<_>, Vec<_>) = paths.into_iter().partition(|path| {
-        path.extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| {
-                ["png", "jpeg", "jpg", "bmp", "webp"]
-                    .iter()
-                    .any(|format| ext.eq_ignore_ascii_case(format))
-            })
-    });
+    let (images, games): (Vec<_>, Vec<_>) = paths.into_iter().partition(|path| is_screenshot(path));
     (images.into_iter().map(ImageInput::File).collect(), games)
+}
+
+/// Checks the formats advertised for drag-and-drop without opening the files.
+pub(crate) fn supports_drop(paths: &[PathBuf]) -> bool {
+    !paths.is_empty()
+        && paths.iter().all(|path| {
+            is_screenshot(path) || has_extension(path, &["pgn", "fen", "epd"]) || is_pgn_gzip(path)
+        })
+}
+
+/// Recognizes the image formats accepted by the screenshot decoder.
+fn is_screenshot(path: &Path) -> bool {
+    has_extension(path, &["png", "jpeg", "jpg", "bmp", "webp"])
+}
+
+/// Matches filename extensions without regard to case.
+fn has_extension(path: &Path, formats: &[&str]) -> bool {
+    path.extension().is_some_and(|ext| {
+        formats
+            .iter()
+            .any(|format| ext.eq_ignore_ascii_case(format))
+    })
+}
+
+/// Recognizes the two-part extension used by gzip-compressed PGN files.
+fn is_pgn_gzip(path: &Path) -> bool {
+    has_extension(path, &["gz"])
+        && path
+            .file_stem()
+            .is_some_and(|stem| has_extension(Path::new(stem), &["pgn"]))
 }
 
 /// Reads all games and positions, preserving successful files when another import fails.
@@ -110,11 +132,7 @@ pub(crate) fn read_game_files(paths: &[PathBuf]) -> (Vec<GameTree>, Vec<String>)
 
 /// Reads plain notation or decompresses a PGN.gz using Fast's existing gzip support.
 fn read_game_text(path: &Path) -> Result<String, String> {
-    let is_pgn_gzip = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.to_ascii_lowercase().ends_with(".pgn.gz"));
-    if is_pgn_gzip {
+    if is_pgn_gzip(path) {
         let input = File::open(path).map_err(|err| err.to_string())?;
         let mut text = String::new();
         flate2::read::MultiGzDecoder::new(input)
@@ -183,5 +201,28 @@ mod tests {
         );
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("positions.epd:1"));
+    }
+    /// Shows the import prompt only when every dragged path has a supported extension.
+    #[test]
+    fn drop_accepts_supported_formats_and_rejects_mixed_batches() {
+        let mut paths = [
+            "board.PNG",
+            "board.jpeg",
+            "board.jpg",
+            "board.bmp",
+            "board.webp",
+            "game.pgn",
+            "game.PGN.GZ",
+            "position.fen",
+            "positions.EPD",
+        ]
+        .map(PathBuf::from)
+        .to_vec();
+        assert!(supports_drop(&paths));
+        paths.push(PathBuf::from("archive.zip"));
+        assert!(!supports_drop(&paths));
+        assert!(!supports_drop(&[PathBuf::from("board.txt.gz")]));
+        assert!(!supports_drop(&[PathBuf::from("board")]));
+        assert!(!supports_drop(&[]));
     }
 }

@@ -701,9 +701,9 @@ impl Render for Workspace {
                                 |area| {
                                     area.on_drop(cx.listener(
                                         |workspace, files: &gpui::ExternalPaths, window, cx| {
-                                            workspace.import_analysis_files(
-                                                files.paths().to_vec(),
-                                                false,
+                                            workspace.drop_analysis_files(
+                                                files,
+                                                imports::FileDropTarget::Analyse,
                                                 window,
                                                 cx,
                                             );
