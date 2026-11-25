@@ -33,7 +33,7 @@ log.workspace = true
 env_logger.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25", default-features = false, features = ["bmp", "jpeg", "png", "webp"] }
 toml.workspace = true
 dirs.workspace = true
 smol.workspace = true

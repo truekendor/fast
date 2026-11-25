@@ -1,6 +1,6 @@
 //! Shared image decoding, grid detection and piece recognition for Fast.
 
-use std::path::Path;
+use std::{io::Cursor, path::Path};
 
 use anyhow::Context as _;
 use chess_core::shakmaty::{Board, Piece, Square};
@@ -14,13 +14,22 @@ pub(crate) struct RecognizedBoard {
     pub board: Board,
 }
 
-/// Opens a PNG or JPEG and converts it to the RGB format used by the classifier.
+/// Opens an image file and converts it to the RGB format used by the classifier.
 pub(crate) fn read(path: &Path) -> anyhow::Result<RgbImage> {
     Ok(image::ImageReader::open(path)
         .with_context(|| format!("could not open {}", path.display()))?
         .with_guessed_format()?
         .decode()
         .with_context(|| format!("could not decode {}", path.display()))?
+        .into_rgb8())
+}
+
+/// Decodes an in-memory screenshot using the same image reader as files.
+pub(crate) fn read_bytes(bytes: &[u8]) -> anyhow::Result<RgbImage> {
+    Ok(image::ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()?
+        .decode()
+        .context("could not decode the clipboard image")?
         .into_rgb8())
 }
 

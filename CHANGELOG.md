@@ -4,6 +4,7 @@ Settings › Changelog shows this file. Describe the finished changes since each
 
 ## 0.1.4
 
+- Analyse: drop or paste screenshots for a board preview, or drop chess files to open them in tabs.
 - Analyse: import a position from a PNG or JPEG, preview the detected boards and open the one you choose.
 - Chessboard recognition: `--recognize-board` reads the pieces from an image and writes their FEN placement.
 - Chessboard detection: Fast uses AVX for the grid filter on supported processors.

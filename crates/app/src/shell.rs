@@ -131,6 +131,7 @@ const MODE_SWITCH_HALF_W: f32 = 165.;
 
 /// Key context present unless a text field has focus.
 pub const SHORTCUT_CONTEXT: &str = "FastShortcuts";
+const ANALYSE_PASTE_CONTEXT: &str = "FastAnalysePaste";
 /// Additionally present unless a button has focus, where Space means "activate".
 const SPACE_CONTEXT: &str = "FastIdle";
 const TAB_CONTEXT: &str = "FastTabs";
@@ -667,14 +668,14 @@ impl Render for Workspace {
             .key_context(TAB_CONTEXT)
             // One node carries both contexts: it must be an ancestor of the focused element.
             .when(!typing, |root| {
-                root.key_context(
-                    if on_button {
-                        format!("{SHORTCUT_CONTEXT} {TAB_CONTEXT}")
-                    } else {
-                        format!("{SHORTCUT_CONTEXT} {SPACE_CONTEXT} {TAB_CONTEXT}")
-                    }
-                    .as_str(),
-                )
+                let mut contexts = format!("{SHORTCUT_CONTEXT} {TAB_CONTEXT}");
+                if !on_button {
+                    contexts.push_str(&format!(" {SPACE_CONTEXT}"));
+                }
+                if self.mode == Mode::Analyse {
+                    contexts.push_str(&format!(" {ANALYSE_PASTE_CONTEXT}"));
+                }
+                root.key_context(contexts.as_str())
             })
             .child(
                 div()

@@ -1,13 +1,13 @@
 //! Imports a screenshot through a board selection and confirmation dialog.
 
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 use chess_core::{Chess, Color, shakmaty::Board};
 use gpui::{App, RenderImage, img};
 use ui::{i18n::t, widgets::dialog};
 
 use super::*;
-use crate::board_image;
+use crate::{analysis_import::ImageInput, board_image};
 
 /// The progress or result of importing a screenshot into this Analyse tab.
 pub(super) enum ImageImport {
@@ -33,8 +33,8 @@ struct Candidate {
 }
 
 /// Recognizes boards and makes small previews of the original image on the worker thread.
-fn read_candidates(path: &Path) -> anyhow::Result<Vec<Candidate>> {
-    let image = board_image::read(path)?;
+fn read_candidates(input: &ImageInput) -> anyhow::Result<Vec<Candidate>> {
+    let image = input.read()?;
     Ok(board_image::recognize(&image, false)?
         .into_iter()
         .map(|board_image::RecognizedBoard { grid, board }| {
@@ -94,44 +94,68 @@ impl AnalyseScreen {
             cx,
             move |path, cx| {
                 let _ = this.update(cx, |screen, cx| {
-                    let task = cx.spawn(async move |this, cx| {
-                        let result = cx
-                            .background_spawn(async move { read_candidates(&path) })
-                            .await;
-                        let _ = this.update(cx, |screen, cx| {
-                            screen.image_import = Some(match result {
-                                Ok(candidates) if candidates.is_empty() => ImageImport::NoBoards,
-                                Ok(candidates) => {
-                                    let prefs = screen.board.read(cx).prefs();
-                                    let choices = BoardChoices {
-                                        candidates,
-                                        selected: 0,
-                                        rotated: false,
-                                        turn: Color::White,
-                                        preview: cx.new(|cx| {
-                                            let mut board =
-                                                BoardView::new("image-position-preview")
-                                                    .read_only();
-                                            board.set_prefs(prefs, cx);
-                                            board
-                                        }),
-                                    };
-                                    choices.update_preview(cx);
-                                    ImageImport::Ready(choices)
-                                }
-                                Err(err) => {
-                                    log::warn!("Image import failed: {err:#}");
-                                    ImageImport::Failed
-                                }
-                            });
-                            cx.notify();
-                        });
-                    });
-                    screen.image_import = Some(ImageImport::Loading { _task: task });
-                    cx.notify();
+                    screen.start_image_import(vec![ImageInput::File(path)], cx);
                 });
             },
         );
+    }
+
+    /// Reuses the board-selection dialog for image files and clipboard screenshots.
+    pub(crate) fn start_image_import(&mut self, inputs: Vec<ImageInput>, cx: &mut Context<Self>) {
+        if inputs.is_empty() || self.image_import.is_some() {
+            return;
+        }
+
+        let task = cx.spawn(async move |this, cx| {
+            let (candidates, decoded, failed) = cx
+                .background_spawn(async move {
+                    let mut candidates = Vec::new();
+                    let mut decoded = false;
+                    let mut failed = false;
+                    for input in inputs {
+                        match read_candidates(&input) {
+                            Ok(found) => {
+                                decoded = true;
+                                candidates.extend(found);
+                            }
+                            Err(err) => {
+                                failed = true;
+                                log::warn!("Image import failed: {err:#}");
+                            }
+                        }
+                    }
+                    (candidates, decoded, failed)
+                })
+                .await;
+            let _ = this.update(cx, |screen, cx| {
+                screen.image_import = Some(if !decoded {
+                    ImageImport::Failed
+                } else if candidates.is_empty() {
+                    ImageImport::NoBoards
+                } else {
+                    let prefs = screen.board.read(cx).prefs();
+                    let choices = BoardChoices {
+                        candidates,
+                        selected: 0,
+                        rotated: false,
+                        turn: Color::White,
+                        preview: cx.new(|cx| {
+                            let mut board = BoardView::new("image-position-preview").read_only();
+                            board.set_prefs(prefs, cx);
+                            board
+                        }),
+                    };
+                    choices.update_preview(cx);
+                    ImageImport::Ready(choices)
+                });
+                if decoded && failed {
+                    screen.model.toast("Some images could not be read.", cx);
+                }
+                cx.notify();
+            });
+        });
+        self.image_import = Some(ImageImport::Loading { _task: task });
+        cx.notify();
     }
 
     /// Applies a change to the selection or the settings for the prospective position.
@@ -176,7 +200,7 @@ impl AnalyseScreen {
                 import_message("Looking for chessboards…").into_any_element()
             }
             ImageImport::Failed => {
-                import_message("Could not read the image. Choose a PNG or JPEG file.")
+                import_message("Could not read the image. Use PNG, JPEG, BMP or WebP.")
                     .into_any_element()
             }
             ImageImport::NoBoards => {
@@ -352,9 +376,9 @@ mod tests {
     /// Keeps the screenshot's valid and invalid guesses available for selection.
     #[test]
     fn imports_all_boards_with_their_own_preview_and_position() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../services/chessboard_detection/fixtures/screenshots/images/chessboard_detect_0004.png");
-        let candidates = read_candidates(&path).unwrap();
+        let candidates = read_candidates(&ImageInput::File(path)).unwrap();
         assert_eq!(candidates.len(), 3);
         assert!(
             candidates

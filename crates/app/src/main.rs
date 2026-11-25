@@ -5,6 +5,7 @@
     windows_subsystem = "windows"
 )]
 
+mod analysis_import;
 mod analysis_store;
 mod app_update;
 mod assets;

@@ -42,7 +42,9 @@ the piece-placement field of FEN in both orientations. The export and TensorFlow
 tools run separately from Cargo and the Fast executable.
 Analyse calls the same Rust image service on a background task, then shows the source crop
 and predicted positions in a dialog. A valid selection opens in a new Analyse tab. A guess
-that needs correction can be sent to the position editor.
+that needs correction can be sent to the position editor. The Analyse import module routes
+dropped paths and native clipboard entries to that same preview or to the existing chess
+parsers. It reads screenshot and notation files on background tasks.
 
 ## Release packaging
 

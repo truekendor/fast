@@ -229,9 +229,12 @@ pub fn translate(language: Language, text: &str) -> &str {
             "Import position from image" => "Stellung aus Bild importieren",
             "Choose a board image" => "Brettbild auswählen",
             "Looking for chessboards…" => "Schachbretter werden gesucht…",
-            "Could not read the image. Choose a PNG or JPEG file." => {
-                "Das Bild konnte nicht gelesen werden. Wählen Sie eine PNG- oder JPEG-Datei."
+            "Could not read the image. Use PNG, JPEG, BMP or WebP." => {
+                "Das Bild konnte nicht gelesen werden. Verwenden Sie PNG, JPEG, BMP oder WebP."
             }
+            "Paste game or image" => "Partie oder Bild einfügen",
+            "The clipboard is empty." => "Die Zwischenablage ist leer.",
+            "Some images could not be read." => "Einige Bilder konnten nicht gelesen werden.",
             "No chessboards found in this image." => {
                 "In diesem Bild wurden keine Schachbretter gefunden."
             }

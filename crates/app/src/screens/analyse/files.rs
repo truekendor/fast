@@ -2,28 +2,7 @@
 
 use super::*;
 
-/// Read every selected file without losing successful games when another file fails.
-pub(super) fn read_game_files(paths: &[std::path::PathBuf]) -> (Vec<GameTree>, Vec<String>) {
-    let mut games = Vec::new();
-    let mut errors = Vec::new();
-    for path in paths {
-        let result = std::fs::read_to_string(path)
-            .map_err(|err| err.to_string())
-            .and_then(|text| {
-                if let Ok(tree) = GameTree::from_fen(text.trim()) {
-                    Ok(vec![tree])
-                } else {
-                    parse_pgn(&text).map_err(|err| err.to_string())
-                }
-            });
-        match result {
-            Ok(mut loaded) if !loaded.is_empty() => games.append(&mut loaded),
-            Ok(_) => errors.push(format!("{}: no games", path.display())),
-            Err(err) => errors.push(format!("{}: {err}", path.display())),
-        }
-    }
-    (games, errors)
-}
+use crate::analysis_import::{ClipboardImport, clipboard_input, read_game_files};
 
 impl AnalyseScreen {
     pub fn load_tree(&mut self, tree: GameTree, window: &mut Window, cx: &mut Context<Self>) {
@@ -117,12 +96,52 @@ impl AnalyseScreen {
         }
     }
 
-    /// Loads a FEN or PGN from the clipboard.
+    /// Routes clipboard images and copied files to the same import paths as drag-and-drop.
     pub fn paste_game(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        match cx.read_from_clipboard().and_then(|item| item.text()) {
-            Some(text) => self.load_text(&text, window, cx),
-            None => self.model.toast("The clipboard has no text.", cx),
+        match cx.read_from_clipboard().and_then(clipboard_input) {
+            Some(ClipboardImport::Files(paths)) => self.drop_import_files(paths, window, cx),
+            Some(ClipboardImport::Screenshot(image)) => self.start_image_import(vec![image], cx),
+            Some(ClipboardImport::Text(text)) => self.load_text(&text, window, cx),
+            None => self.model.toast("The clipboard is empty.", cx),
         }
+    }
+
+    /// Opens dropped notation in new tabs and imports any screenshots into one preview.
+    pub(super) fn drop_import_files(
+        &mut self,
+        paths: Vec<std::path::PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (images, game_files) = crate::analysis_import::split_files(paths);
+        if game_files.is_empty() {
+            self.start_image_import(images, cx);
+            return;
+        }
+
+        let workspace = self.workspace.clone();
+        let model = self.model.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let (games, errors) = cx
+                .background_spawn(async move { read_game_files(&game_files) })
+                .await;
+            if games.is_empty() {
+                let _ = this.update_in(cx, |screen, _, cx| screen.start_image_import(images, cx));
+            } else if this.upgrade().is_some() {
+                let _ = cx.update(|window, cx| {
+                    let _ = workspace.update(cx, |workspace, cx| {
+                        for tree in games {
+                            workspace.open_analysis(tree, window, cx);
+                        }
+                        workspace.import_analysis_images(images, cx);
+                    });
+                });
+            }
+            if !errors.is_empty() {
+                let _ = cx.update(|_, cx| model.toast(errors.join("\n"), cx));
+            }
+        })
+        .detach();
     }
 
     /// Writes the game, with variations, comments and engine evals, to a PGN file.

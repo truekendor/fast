@@ -28,7 +28,7 @@ pub(super) fn app_menus() -> Vec<gpui::Menu> {
         Menu::new(ui::i18n::t("Edit")).items([
             MenuItem::action(ui::i18n::t("Copy FEN"), CopyFen),
             MenuItem::action(ui::i18n::t("Copy PGN"), CopyPgn),
-            MenuItem::action("Paste FEN or PGN", PasteGame),
+            MenuItem::action(ui::i18n::t("Paste game or image"), PasteGame),
         ]),
         Menu::new(ui::i18n::t("View")).items([
             MenuItem::action(ui::i18n::t("Analyse"), ShowAnalyse),
@@ -145,6 +145,12 @@ pub fn unbind_shortcut(keystroke: &str, name: &str, cx: &mut App) {
 }
 
 pub fn init(cx: &mut App) {
+    let paste = if cfg!(target_os = "macos") {
+        "cmd-v"
+    } else {
+        "ctrl-v"
+    };
+    load_binding(paste, Box::new(PasteGame), ANALYSE_PASTE_CONTEXT, cx);
     cx.on_action(|_: &Quit, cx| cx.quit());
     refresh_menus(cx);
 }
