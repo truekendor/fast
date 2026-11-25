@@ -499,8 +499,7 @@ impl Workspace {
         // `--screen` asks for one screen, so the saved tabs only come back without it.
         let session = (screen.is_none())
             .then(|| workspace.model.read(cx).config.session.clone())
-            .flatten()
-            .filter(|session| !session.tabs.is_empty());
+            .flatten();
         match session {
             Some(session) => workspace.restore_session(session, window, cx),
             None => workspace.restore_recovery_tabs(window, cx),
@@ -520,7 +519,7 @@ impl Workspace {
             matches!(&tab.content, TabContent::Analyse(screen)
                 if screen.read(cx).tree.variant == chess_core::Variant::Chess960)
         });
-        if workspace.model.read(cx).demo && !has_chess960 {
+        if workspace.model.read(cx).demo && !has_chess960 && !workspace.tabs.is_empty() {
             let active = workspace.active_tab;
             workspace.new_tab(Mode::Analyse, window, cx);
             workspace.analyse.update(cx, |screen, cx| {
@@ -670,7 +669,7 @@ impl Render for Workspace {
             // One node carries both contexts: it must be an ancestor of the focused element.
             .when(!typing, |root| {
                 let mut contexts = format!("{SHORTCUT_CONTEXT} {TAB_CONTEXT}");
-                if !on_button {
+                if !on_button && !self.tabs.is_empty() {
                     contexts.push_str(&format!(" {SPACE_CONTEXT}"));
                 }
                 if self.mode == Mode::Analyse || self.new_tab_menu_open {
@@ -783,6 +782,9 @@ impl Render for Workspace {
 impl Workspace {
     /// The screen of the active tab.
     fn active_screen(&self) -> AnyElement {
+        if self.tabs.is_empty() {
+            return div().into_any_element();
+        }
         match self.mode {
             Mode::Analyse => self.analyse.clone().into_any_element(),
             Mode::Database => self.database.clone().into_any_element(),
@@ -868,9 +870,9 @@ impl Workspace {
             this.new_chess960(random_chess960_number(), window, cx);
         }))
         .on_action(cx.listener(|this, _: &NewTab, window, cx| {
-            let mode = match this.mode {
-                Mode::Play => Mode::Play,
-                Mode::Database => Mode::Database,
+            let mode = match (this.tabs.is_empty(), this.mode) {
+                (false, Mode::Play) => Mode::Play,
+                (false, Mode::Database) => Mode::Database,
                 _ => Mode::Analyse,
             };
             this.new_tab(mode, window, cx);

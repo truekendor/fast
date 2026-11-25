@@ -134,17 +134,19 @@ impl Workspace {
                                     .font_weight(FontWeight::BOLD)
                                     .child(ui::i18n::t("New tab")),
                             )
-                            .child(
-                                btn("new-tab-picker-close", "×")
-                                    .h(28.)
-                                    .w(28.)
-                                    .pad(4.)
-                                    .tooltip(ui::i18n::t("Close"))
-                                    .on_click(close.listen(move |this, _, cx| {
-                                        this.new_tab_menu_open = false;
-                                        cx.notify();
-                                    })),
-                            ),
+                            .when(!self.tabs.is_empty(), |header| {
+                                header.child(
+                                    btn("new-tab-picker-close", "×")
+                                        .h(28.)
+                                        .w(28.)
+                                        .pad(4.)
+                                        .tooltip(ui::i18n::t("Close"))
+                                        .on_click(close.listen(move |this, _, cx| {
+                                            this.new_tab_menu_open = false;
+                                            cx.notify();
+                                        })),
+                                )
+                            }),
                     )
                     .child(self.new_tab_import_target(cx))
                     .child(cards)
@@ -560,7 +562,7 @@ impl Workspace {
                 gpui_component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
             })
             .on_click(cx.entity().listen_event(move |this, _, window, cx| {
-                this.new_tab_menu_open = !this.new_tab_menu_open;
+                this.new_tab_menu_open = this.tabs.is_empty() || !this.new_tab_menu_open;
                 this.focus.focus(window, cx);
                 cx.notify();
             }))

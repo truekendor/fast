@@ -51,7 +51,9 @@ impl Workspace {
             cx.notify();
             return;
         }
-        if self.mode == Mode::Analyse
+        let previous_open = self.tabs.iter().any(|tab| tab.id == self.active_tab);
+        if previous_open
+            && self.mode == Mode::Analyse
             && let Err(err) = self.analyse.read(cx).checkpoint()
         {
             self.model.toast(
@@ -72,7 +74,7 @@ impl Workspace {
             self.train
                 .update(cx, |screen, cx| screen.set_visible(false, cx));
         }
-        if record && self.tabs.iter().any(|tab| tab.id == self.active_tab) {
+        if record && previous_open {
             self.back_tabs.retain(|visited| *visited != self.active_tab);
             self.back_tabs.push(self.active_tab);
             if self.back_tabs.len() > 50 {
@@ -210,6 +212,7 @@ impl Workspace {
         });
     }
 
+    /// Closes the tab and selects its neighbour or shows New tab when the workspace is empty.
     pub(super) fn close_tab(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
             return;
@@ -227,6 +230,11 @@ impl Workspace {
         if let TabContent::Play(screen) = &self.tabs[index].content {
             screen.update(cx, |screen, cx| screen.suspend(cx));
         }
+        if let Some(rename) = &self.renaming
+            && rename.key == id
+        {
+            self.renaming = None;
+        }
         let tab = self.tabs.remove(index);
         self.last_tab.retain(|_, value| *value != id);
         self.closed_tabs.push(tab);
@@ -235,7 +243,7 @@ impl Workspace {
         }
         if self.active_tab == id {
             if self.tabs.is_empty() {
-                self.new_tab(Mode::Analyse, window, cx);
+                self.show_empty_workspace(window, cx);
             } else {
                 self.activate_tab(self.tabs[index.min(self.tabs.len() - 1)].id, cx);
             }
@@ -244,7 +252,7 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Closes every tab safely and starts a fresh Analyse tab numbered one.
+    /// Closes every tab safely and shows the New tab picker.
     pub(super) fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Preserve every analysis before changing the workspace, just as closing one does.
         for tab in &self.tabs {
@@ -283,11 +291,23 @@ impl Workspace {
         self.forward_tabs.clear();
         self.tab_watch.clear();
         self.renaming = None;
-        self.active_tab = u64::MAX;
         self.next_recovery_id = self.next_recovery_id.max(self.next_tab_id);
         self.next_tab_id = 1;
-        self.tab_in_view.set(0);
-        self.new_tab(Mode::Analyse, window, cx);
+        self.show_empty_workspace(window, cx);
+        self.save_session(cx);
+        cx.notify();
+    }
+
+    /// Leaves the picker ready for opening or importing into the first tab.
+    pub(super) fn show_empty_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.active_tab = u64::MAX;
+        self.tab_in_view.set(u64::MAX);
+        self.new_tab_menu_open = true;
+        self.analyse
+            .update(cx, |screen, cx| screen.set_visible(false, cx));
+        self.train
+            .update(cx, |screen, cx| screen.set_visible(false, cx));
+        self.focus.focus(window, cx);
     }
 
     pub(super) fn reopen_tab(&mut self, cx: &mut Context<Self>) {

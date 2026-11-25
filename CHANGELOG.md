@@ -4,6 +4,7 @@ Settings › Changelog shows this file. Describe the finished changes since each
 
 ## 0.1.4
 
+- New tab: closing the last tab shows the tab picker without opening a replacement.
 - Analyse: the tab and its content highlight when you drag a file over them, and you can drop files on the New tab button.
 - New tab: drop or paste a screenshot or chess file to open it in Analyse.
 - Analyse: translucent shading makes selected and detected boards easier to see on the screenshot.

@@ -1004,6 +1004,20 @@ mod tests {
         );
     }
 
+    /// Remembers that the user closed every tab across a restart.
+    #[test]
+    fn intentionally_empty_workspace_round_trips() {
+        let config = Config {
+            session: Some(SavedSession::default()),
+            ..Default::default()
+        };
+        let saved = toml::to_string(&config).unwrap();
+        assert_eq!(
+            toml::from_str::<Config>(&saved).unwrap().session,
+            config.session
+        );
+    }
+
     #[test]
     fn every_ui_theme_round_trips_and_missing_theme_defaults_to_forest() {
         assert_eq!(

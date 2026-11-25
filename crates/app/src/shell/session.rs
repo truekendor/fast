@@ -111,7 +111,7 @@ impl Workspace {
             used.push(mode);
             tabs.push(tab);
         }
-        if tabs.is_empty() {
+        if tabs.is_empty() && !session.tabs.is_empty() {
             return;
         }
         // New tabs must not pick up a recovery file left by a tab closed earlier.
@@ -133,6 +133,12 @@ impl Workspace {
         let highest_tab = tabs.iter().map(|tab| tab.id).max().unwrap_or(0);
         self.next_tab_id = highest_tab + 1;
         self.next_recovery_id = highest_file.max(highest_tab) + 1;
+        if tabs.is_empty() {
+            self.tabs.clear();
+            self.last_tab.clear();
+            self.show_empty_workspace(window, cx);
+            return;
+        }
         let active = tabs
             .get(session.active)
             .or(tabs.first())
