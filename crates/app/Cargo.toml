@@ -16,6 +16,7 @@ gpui-component.workspace = true
 gpui-kit-assets = { git = "https://github.com/longbridge/gpui-component", rev = "48ac25b50c81ca5e34ec1631e3efabe22f4af64a" }
 chess_core.workspace = true
 chessboard_detection = { path = "../chessboard_detection" }
+piece_recognition = { path = "../piece_recognition" }
 engine.workspace = true
 db.workspace = true
 rusqlite.workspace = true

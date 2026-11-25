@@ -5,6 +5,7 @@ members = [
   "crates/ui",
   "crates/chess_core",
   "crates/chessboard_detection",
+  "crates/piece_recognition",
   "crates/engine",
   "crates/db",
   "crates/trainer",

@@ -125,3 +125,10 @@ python -B -m services.chessboard_detection.compare_rust target/release/fast.exe 
 ```
 
 Rust and Python each find all 14 labelled boards in the occluded fixtures at IoU ≥ 0.95.
+
+## Piece recognition
+
+`fast --recognize-board IMAGE OUTPUT.json` classifies the 64 cells of every detected board
+with the embedded MobileNet and classifier head. The JSON includes `placement` in image order
+and `flipped_placement` for a board rotated by 180 degrees. Both are the first field of FEN.
+See the [model provenance and parity checks](../../crates/piece_recognition/README.md).

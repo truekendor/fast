@@ -22,3 +22,12 @@ The Lichess sounds in `sounds/lichess` are AGPL-3.0-or-later. GPL-3.0 section 13
 distributing them together with Fast's GPL-3.0-or-later code. The sound files keep their
 AGPL terms, and the rest of Fast stays under the GPL. Anyone who modifies those sounds and
 offers them to users over a network must also offer the modified sound files' source.
+
+## Piece recognition weights
+
+The embedded MobileNet V3 Small feature extractor was published by
+[Google through TensorFlow Hub](https://github.com/tensorflow/tfhub.dev/blob/master/assets/docs/google/models/imagenet/mobilenet_v3_small_100_224/feature_vector/5.md).
+Fast converts it and the trained chess piece head from
+[chessboard-image-to-fen](https://github.com/truekendor/chessboard-image-to-fen/tree/1955c3ed1c6db063e9ce819e8b2af81e0334c93c/public/nn)
+to ONNX without changing the weights. The exact artifact and export steps are documented in
+[`piece_recognition`](../crates/piece_recognition/README.md).

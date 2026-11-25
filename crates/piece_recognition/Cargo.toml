@@ -1,0 +1,10 @@
+[package]
+name = "piece_recognition"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Offline CPU recognition of chess pieces from RGB cells."
+
+[dependencies]
+anyhow.workspace = true
+tract-onnx = { version = "0.22.6", default-features = false }

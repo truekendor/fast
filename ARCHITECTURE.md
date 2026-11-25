@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | `chess_core` | no | Game tree (mainline, variations, NAGs, comments), PGN in/out, notation, opening table |
 | `chessboard_detection` | no | Finds 8×8 grids in grayscale screenshots and returns their intersections |
+| `piece_recognition` | no | Runs the embedded MobileNet and chess piece classifier on RGB cells |
 | `engine` | no | UCI parser, supervised engine processes, analysis events |
 | `db` | no | One SQLite file per database, streaming PGN import, filters, position search, editing and deleting games, copying a database, notes |
 | `trainer` | no | Repertoire tree, SM-2 scheduler, leak and gap detection |
@@ -33,6 +34,12 @@ grayscale pixels and has no dependencies. The Python service runs only as a sepa
 experiment and reference benchmark.
 For the crossing filter, the crate selects AVX at runtime on compatible x86-64 CPUs and
 uses the portable scalar code elsewhere. Both implementations are linked into Fast.
+
+`--recognize-board IMAGE OUTPUT.json` runs the same grid detector, crops the RGB cells and
+reuses one CPU classifier for all detected boards. `piece_recognition` embeds the converted
+weights and runs them through `tract` in process. Each recognized board includes its grid and
+the piece-placement field of FEN in both orientations. The export and TensorFlow.js reference
+tools run separately from Cargo and the Fast executable.
 
 ## Release packaging
 
