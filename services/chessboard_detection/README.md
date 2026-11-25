@@ -76,3 +76,9 @@ directly.
 
 On the masked sample the color detector matches 6 of 41 labels. The line detector matches
 40 of 41 labels, including all 33 in multi-board frames. It misses the board in `0033`.
+
+## Detector experiments
+
+The [comparison of validation checks](ABLATION.md) measures how the line detector behaves
+with each check disabled. It includes a rectangular contour baseline and screenshots without
+boards. Run `python -B -m services.chessboard_detection.ablation` to reproduce the comparison.

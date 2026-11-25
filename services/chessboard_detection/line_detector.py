@@ -45,6 +45,16 @@ class _Fit:
     strength: float
 
 
+@dataclass(frozen=True)
+class _Checks:
+    """Select the validation steps to run after the shared candidate search."""
+
+    spacing: bool = True
+    square: bool = True
+    crossings: bool = True
+    boundary: bool = True
+
+
 def _crossing_template() -> np.ndarray:
     """Make a matched filter that responds to seven-by-seven alternating crossings."""
     pitch = _TEMPLATE_PITCH
@@ -98,7 +108,13 @@ def _propose(gray: np.ndarray) -> list[_Candidate]:
 
 
 def _fit_axis(
-    derivative: np.ndarray, start: float, cross_start: float, pitch: float, polarity: float
+    derivative: np.ndarray,
+    start: float,
+    cross_start: float,
+    pitch: float,
+    polarity: float,
+    *,
+    check_spacing: bool = True,
 ) -> tuple[float, float] | None:
     """Refine seven rough lines and fit positions within the pixel tolerance."""
     expected = start + _INNER * pitch
@@ -115,6 +131,14 @@ def _fit_axis(
     peaks = np.argmax(response, axis=1)
     observed = positions[np.arange(7), peaks] + 0.5
     weights = response[np.arange(7), peaks]
+
+    if not check_spacing:
+        strong = weights > 2
+        if np.count_nonzero(strong) < 5:
+            return None
+        # Estimate the bounding grid directly, without selecting evenly spaced peaks.
+        refined_pitch, origin = np.polyfit(_INNER[strong], observed[strong], 1)
+        return float(origin), float(refined_pitch)
 
     # Use all pairs as pitch hypotheses so a piece crossing a line cannot skew the fit.
     first, second = _LINE_PAIRS
@@ -156,20 +180,39 @@ def _junction_contrast(
     return np.max(samples, axis=0)
 
 
-def _fit_grid(gray: np.ndarray, gx: np.ndarray, gy: np.ndarray, candidate: _Candidate) -> _Fit | None:
-    """Require regular lines, a square aspect ratio and alternating evidence at crossings."""
+def _locate_axes(
+    gx: np.ndarray,
+    gy: np.ndarray,
+    candidate: _Candidate,
+    *,
+    check_spacing: bool = True,
+) -> tuple[float, float, float, float] | None:
+    """Fit the horizontal and vertical grid coordinates from the directional gradients."""
     x, y, pitch = candidate.x, candidate.y, candidate.pitch
     polarity = np.sign(candidate.response)
-    horizontal_axis = _fit_axis(gx, x, y, pitch, polarity)
-    vertical_axis = _fit_axis(gy.T, y, x, pitch, polarity)
-    if horizontal_axis is None or vertical_axis is None:
+    horizontal_axis = _fit_axis(gx, x, y, pitch, polarity, check_spacing=check_spacing)
+    if horizontal_axis is None:
+        return None
+    vertical_axis = _fit_axis(gy.T, y, x, pitch, polarity, check_spacing=check_spacing)
+    if vertical_axis is None:
         return None
     x, dx = horizontal_axis
     y, dy = vertical_axis
+    return x, y, dx, dy
+
+
+def _check_grid(
+    gray: np.ndarray,
+    axes: tuple[float, float, float, float],
+    polarity: float,
+    checks: _Checks,
+) -> _Fit | None:
+    """Validate the fitted axes and the contrasting junctions within their bounds."""
+    x, y, dx, dy = axes
     height, width = gray.shape
     if round(8 * min(dx, dy)) < _MIN_BOARD_SIDE_PX:
         return None
-    if abs(dx - dy) > min(_LINE_TOLERANCE_PX, max(0.75, 0.05 * max(dx, dy))):
+    if checks.square and abs(dx - dy) > min(_LINE_TOLERANCE_PX, max(0.75, 0.05 * max(dx, dy))):
         return None
     if min(x, y, width - x - 8 * dx, height - y - 8 * dy) < -_LINE_TOLERANCE_PX:
         return None
@@ -182,14 +225,16 @@ def _fit_grid(gray: np.ndarray, gx: np.ndarray, gy: np.ndarray, candidate: _Cand
     crossings = int(np.count_nonzero(supported))
     supported_cols = np.count_nonzero(supported.any(axis=0))
     supported_rows = np.count_nonzero(supported.any(axis=1))
-    if crossings < 26 or min(supported_cols, supported_rows) < 6:
+    if checks.crossings and (crossings < 26 or min(supported_cols, supported_rows) < 6):
         return None
+    interior_strength = float(inner.clip(0, 40).mean())
+    if not checks.boundary:
+        return _Fit(x, y, dx, dy, crossings, interior_strength)
     # A full extra row of crossings is evidence that the fit is shifted by one cell.
     border = np.array(
         [contrast[0, 1:-1], contrast[-1, 1:-1], contrast[1:-1, 0], contrast[1:-1, -1]]
     )
     continuation = float(np.max(border.clip(0, 40).mean(axis=1)))
-    interior_strength = float(inner.clip(0, 40).mean())
     if continuation > 0.85 * interior_strength:
         return None
     strength = interior_strength - 0.65 * continuation
@@ -210,22 +255,36 @@ def _to_grid(fit: _Fit, width: int, height: int) -> LineGrid:
     return LineGrid(tuple(tuple((x, y) for x in xs) for y in ys), fit.crossings)
 
 
-def detect_line_grids(image: np.ndarray) -> list[LineGrid]:
-    """Return distinct 8×8 grids in screenshot order, with support counted at crossings."""
+def _gradients(image: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Prepare the grayscale image and the directional gradients used by every variant."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
     smooth = cv2.GaussianBlur(gray, (3, 3), 0.65)
     gx = cv2.Sobel(smooth, cv2.CV_32F, 1, 0, ksize=3, scale=0.25)
     gy = cv2.Sobel(smooth, cv2.CV_32F, 0, 1, ksize=3, scale=0.25)
-    fits = []
-    for candidate in _propose(smooth):
-        fit = _fit_grid(smooth, gx, gy, candidate)
-        if fit is not None:
-            fits.append(fit)
+    return smooth, gx, gy
 
+
+def _distinct_fits(fits: list[_Fit]) -> list[_Fit]:
+    """Prefer strong grids within each overlap group and sort them in image order."""
     distinct = []
     for fit in sorted(fits, key=lambda f: (f.strength, f.crossings), reverse=True):
         if not any(_overlaps(fit, previous) for previous in distinct):
             distinct.append(fit)
+    return sorted(distinct, key=lambda f: (f.y, f.x))
 
-    height, width = gray.shape
-    return [_to_grid(fit, width, height) for fit in sorted(distinct, key=lambda f: (f.y, f.x))]
+
+def detect_line_grids(image: np.ndarray) -> list[LineGrid]:
+    """Return distinct 8×8 grids in screenshot order, with support counted at crossings."""
+    smooth, gx, gy = _gradients(image)
+    checks = _Checks()
+    fits = []
+    for candidate in _propose(smooth):
+        axes = _locate_axes(gx, gy, candidate)
+        if axes is None:
+            continue
+        fit = _check_grid(smooth, axes, np.sign(candidate.response), checks)
+        if fit is not None:
+            fits.append(fit)
+
+    height, width = smooth.shape
+    return [_to_grid(fit, width, height) for fit in _distinct_fits(fits)]

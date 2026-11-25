@@ -51,7 +51,9 @@ def _iou(a: Box, b: Box) -> float:
     return intersection / (area_a + area_b - intersection)
 
 
-def _match(predictions: list[Box], labels: list[Box]) -> tuple[int, float | None]:
+def _match(
+    predictions: list[Box], labels: list[Box], threshold: float = MATCH_IOU
+) -> tuple[int, float | None]:
     """Count one-to-one matches, using the highest overlap first."""
     overlaps = sorted(
         ((_iou(prediction, label), i, j)
@@ -61,7 +63,7 @@ def _match(predictions: list[Box], labels: list[Box]) -> tuple[int, float | None
     matched_predictions = set()
     matched_labels = set()
     for overlap, i, j in overlaps:
-        if overlap < MATCH_IOU:
+        if overlap < threshold:
             break
         if i not in matched_predictions and j not in matched_labels:
             matched_predictions.add(i)

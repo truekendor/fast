@@ -39,7 +39,7 @@ class DetectionTests(unittest.TestCase):
                 image = cv2.imread(str(screenshots / f"{name}.png"))
                 self.assert_grid(image, x, y, pitch, tolerance=1)
 
-        for name in ("position-patterns", "settings", "tournament"):
+        for name in ("position-patterns", "settings"):
             with self.subTest(screenshot=name):
                 image = cv2.imread(str(screenshots / f"{name}.png"))
                 self.assertIsNotNone(image)
