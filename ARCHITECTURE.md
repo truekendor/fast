@@ -31,6 +31,8 @@ command decodes a PNG or JPEG with the existing Rust image library and calls
 `chessboard_detection` before loading GPUI or a user profile. The detector crate takes
 grayscale pixels and has no dependencies. The Python service runs only as a separate
 experiment and reference benchmark.
+For the crossing filter, the crate selects AVX at runtime on compatible x86-64 CPUs and
+uses the portable scalar code elsewhere. Both implementations are linked into Fast.
 
 ## Release packaging
 

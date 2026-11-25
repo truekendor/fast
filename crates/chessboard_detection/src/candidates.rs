@@ -2,6 +2,7 @@
 
 use crate::{
     MIN_BOARD_SIDE,
+    filter::Filter,
     raster::{Raster, scaled_with_border},
 };
 
@@ -17,21 +18,13 @@ pub(super) struct Candidate {
 }
 
 /// Adds the seven alternating three-pixel block differences of the template on one axis.
-fn correlate_axis(image: &Raster) -> Raster {
+fn correlate_axis(image: &Raster, filter: Filter) -> Raster {
     let width = image.width - TEMPLATE_SIZE + 1;
     let mut pixels = vec![0.0; width * image.height];
     let mut differences = vec![0.0; image.width - 7];
     for (y, output) in pixels.chunks_exact_mut(width).enumerate() {
-        let row = image.row(y);
-        for (delta, window) in differences.iter_mut().zip(row.windows(8)) {
-            *delta = (window[0] + window[1] + window[2]) - (window[5] + window[6] + window[7]);
-        }
         // The alternating junction template is an outer product of these one-axis filters.
-        for (x, value) in output.iter_mut().enumerate() {
-            let deltas = &differences[x + 6..x + 67];
-            *value = deltas[0] - deltas[10] + deltas[20] - deltas[30] + deltas[40] - deltas[50]
-                + deltas[60];
-        }
+        filter.correlate(image.row(y), &mut differences, output);
     }
     Raster {
         width,
@@ -74,16 +67,16 @@ fn scale_peaks(response: &Raster) -> Vec<(f32, usize, usize)> {
 }
 
 /// Searches pitches supported by an upright board at least 80 pixels across.
-pub(super) fn propose(image: &Raster) -> Vec<Candidate> {
+pub(super) fn propose(image: &Raster, filter: Filter) -> Vec<Candidate> {
     let mut candidates = Vec::new();
     let mut pitch = (MIN_BOARD_SIDE - crate::LINE_TOLERANCE) / 8.0;
     let max_pitch = image.width.min(image.height) as f64 / 8.0 * 1.04;
     while pitch <= max_pitch {
         let scale = TEMPLATE_PITCH as f64 / pitch;
         let scaled = scaled_with_border(image, scale);
-        let horizontal = correlate_axis(&scaled);
+        let horizontal = correlate_axis(&scaled, filter);
         // Keep the response transposed to avoid copying it again just to read off the peaks.
-        let response = correlate_axis(&horizontal.transpose());
+        let response = correlate_axis(&horizontal.transpose(), filter);
         candidates.extend(
             scale_peaks(&response)
                 .into_iter()

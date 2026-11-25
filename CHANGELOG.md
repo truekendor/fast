@@ -4,6 +4,7 @@ Settings › Changelog shows this file. Describe the finished changes since each
 
 ## 0.1.4
 
+- Chessboard detection: Fast uses AVX for the grid filter on supported processors.
 - Chessboard detection: Fast can detect grids directly from a PNG or JPEG with `--detect-grid`.
 - Chessboard detection: the line detector skips boards smaller than 80 pixels on the shorter side.
 - Chessboard detection: the line detector can find multiple 8×8 grids in one screenshot.

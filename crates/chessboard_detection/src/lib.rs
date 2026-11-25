@@ -1,9 +1,11 @@
 //! Detects upright 8×8 chessboard grids without a UI or native image libraries.
 
 mod candidates;
+mod filter;
 mod fit;
 mod raster;
 
+use filter::Filter;
 use fit::{Fit, overlaps, refine};
 use raster::{Raster, gradients};
 
@@ -22,6 +24,16 @@ pub struct Grid {
 /// Detects distinct grids in row-major 8-bit grayscale pixels, in image order.
 /// Returns an empty list for mismatched image dimensions or insufficient evidence.
 pub fn detect_grids(pixels: &[u8], width: usize, height: usize) -> Vec<Grid> {
+    detect(pixels, width, height, Filter::automatic())
+}
+
+/// Detects grids with the portable kernel for diagnostics and performance comparisons.
+pub fn detect_grids_scalar(pixels: &[u8], width: usize, height: usize) -> Vec<Grid> {
+    detect(pixels, width, height, Filter::scalar())
+}
+
+/// Finds grids using the chosen template filter and the same refinement in both modes.
+fn detect(pixels: &[u8], width: usize, height: usize, filter: Filter) -> Vec<Grid> {
     if width.min(height) < MIN_BOARD_SIDE as usize
         || width.checked_mul(height) != Some(pixels.len())
     {
@@ -33,7 +45,7 @@ pub fn detect_grids(pixels: &[u8], width: usize, height: usize) -> Vec<Grid> {
         pixels: pixels.iter().map(|&value| f32::from(value)).collect(),
     };
     let (smooth, gx, gy) = gradients(image);
-    let mut fits: Vec<_> = candidates::propose(&smooth)
+    let mut fits: Vec<_> = candidates::propose(&smooth, filter)
         .iter()
         .filter_map(|candidate| refine(&smooth, &gx, &gy, candidate))
         .collect();
@@ -92,6 +104,7 @@ mod tests {
             }
         }
         let grids = detect_grids(&pixels, width, height);
+        assert_eq!(grids, detect_grids_scalar(&pixels, width, height));
         assert_eq!(grids.len(), 2);
         for (grid, expected) in grids.iter().zip([[92.0, 16.0], [199.0, 26.0]]) {
             for (coordinate, position) in grid.intersections[0][0].into_iter().zip(expected) {

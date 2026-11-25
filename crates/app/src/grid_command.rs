@@ -1,6 +1,6 @@
 //! Runs standalone grid detection through the Fast executable.
 
-use std::{path::Path, process::ExitCode};
+use std::{ffi::OsStr, path::Path, process::ExitCode};
 
 use anyhow::{Context, anyhow};
 use serde::Serialize;
@@ -21,12 +21,20 @@ struct Report {
 /// Handles a detection request before GPUI and profile loading start.
 pub(crate) fn run_if_requested() -> Option<ExitCode> {
     let mut args = std::env::args_os().skip(1);
-    if args.next().as_deref() != Some(std::ffi::OsStr::new("--detect-grid")) {
+    if args.next().as_deref() != Some(OsStr::new("--detect-grid")) {
         return None;
     }
-    let result = match (args.next(), args.next(), args.next()) {
-        (Some(image), Some(output), None) => detect(Path::new(&image), Path::new(&output)),
-        _ => Err(anyhow!("usage: fast --detect-grid IMAGE OUTPUT.json")),
+    let image = args.next();
+    let output = args.next();
+    let mode = args.next();
+    let scalar = mode.as_deref() == Some(OsStr::new("--scalar"));
+    let result = match (image, output, args.next()) {
+        (Some(image), Some(output), None) if mode.is_none() || scalar => {
+            detect(Path::new(&image), Path::new(&output), scalar)
+        }
+        _ => Err(anyhow!(
+            "usage: fast --detect-grid IMAGE OUTPUT.json [--scalar]"
+        )),
     };
     Some(match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -38,7 +46,7 @@ pub(crate) fn run_if_requested() -> Option<ExitCode> {
 }
 
 /// Decodes the screenshot and writes one JSON result to a new file.
-fn detect(input: &Path, output: &Path) -> anyhow::Result<()> {
+fn detect(input: &Path, output: &Path, scalar: bool) -> anyhow::Result<()> {
     let image = image::ImageReader::open(input)
         .with_context(|| format!("could not open {}", input.display()))?
         .with_guessed_format()?
@@ -58,17 +66,18 @@ fn detect(input: &Path, output: &Path) -> anyhow::Result<()> {
             ((red * 9798 + green * 19235 + blue * 3735 + 16384) >> 15) as u8
         })
         .collect();
-    let grids: Vec<_> = chessboard_detection::detect_grids(
-        &pixels,
-        image.width() as usize,
-        image.height() as usize,
-    )
-    .into_iter()
-    .map(|grid| GridReport {
-        intersections: grid.intersections,
-        matched_crossings: grid.matched_crossings,
-    })
-    .collect();
+    let detect = if scalar {
+        chessboard_detection::detect_grids_scalar
+    } else {
+        chessboard_detection::detect_grids
+    };
+    let grids: Vec<_> = detect(&pixels, image.width() as usize, image.height() as usize)
+        .into_iter()
+        .map(|grid| GridReport {
+            intersections: grid.intersections,
+            matched_crossings: grid.matched_crossings,
+        })
+        .collect();
     let directory = output
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
