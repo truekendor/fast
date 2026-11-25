@@ -14,6 +14,14 @@
 The four domain crates are pure and unit-tested, including a fake UCI engine for process tests
 (`crates/engine/tests`).
 
+## Experimental services
+
+[`services/chessboard_detection`](services/chessboard_detection/README.md) is a standalone
+Python/OpenCV prototype. Its detector maps a screenshot to an 8×8 grid in source pixels.
+The CLI handles image decoding, JSON output and diagnostic overlays. The point-based output
+can be consumed by a future piece classifier or a background import task in Fast. The service
+runs outside GPUI and Cargo and needs no Fast profile.
+
 ## Release packaging
 
 `.github/workflows/release.yml` is started manually and builds native executables on
