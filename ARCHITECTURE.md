@@ -45,8 +45,10 @@ boards on the original screenshot beside the position preview. A manual square c
 the 8×8 cell boundaries to the same classifier when automatic detection misses a board. A guess
 that needs correction can be sent to the position editor. The workspace routes dropped files
 and native clipboard entries from Analyse and the new-tab picker to that same preview or to
-the existing chess parsers. It reads screenshots and notation files on background tasks. The
-picker reserves an Analyse tab for a screenshot so confirming the position fills that tab.
+the existing chess parsers. Dropping on an Analyse tab header activates that tab first.
+Dropping on New tab uses the picker's import flow, which reserves an Analyse tab for a
+screenshot so confirming the position fills that tab. The workspace reads screenshots and
+notation files on background tasks.
 
 ## Release packaging
 

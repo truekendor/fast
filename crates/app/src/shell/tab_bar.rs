@@ -111,7 +111,7 @@ impl Workspace {
             .overflow_y_scroll()
             .on_drop(
                 cx.listener(|workspace, files: &gpui::ExternalPaths, window, cx| {
-                    workspace.import_analysis_files(files.paths().to_vec(), window, cx);
+                    workspace.import_analysis_files(files.paths().to_vec(), true, window, cx);
                 }),
             )
             .items_center()
@@ -348,6 +348,17 @@ impl Workspace {
                 |drag, _, _, cx| cx.new(|_| drag.clone()),
             )
             .drag_over::<DraggedTab>(|style, _, _, _| style.border_color(rgb(T.accent)))
+            .when(analysis, |tab| {
+                tab.drag_over::<gpui::ExternalPaths>(|style, _, _, _| {
+                    style.border_color(rgb(T.accent)).bg(rgb(T.selected))
+                })
+                .on_drop(cx.listener(
+                    move |workspace, files: &gpui::ExternalPaths, window, cx| {
+                        workspace.activate_tab(id, cx);
+                        workspace.import_analysis_files(files.paths().to_vec(), false, window, cx);
+                    },
+                ))
+            })
             .on_drop(cx.listener(move |this, drag: &DraggedTab, _, cx| {
                 let source = this.tabs.iter().position(|tab| tab.id == drag.id);
                 let target = this.tabs.iter().position(|tab| tab.id == id);
@@ -515,6 +526,14 @@ impl Workspace {
         let open = self.new_tab_menu_open;
         h_flex()
             .id("new-tab")
+            .drag_over::<gpui::ExternalPaths>(|style, _, _, _| {
+                style.border_color(rgb(T.accent)).bg(rgb(T.selected))
+            })
+            .on_drop(
+                cx.listener(|workspace, files: &gpui::ExternalPaths, window, cx| {
+                    workspace.import_analysis_files(files.paths().to_vec(), true, window, cx);
+                }),
+            )
             .flex_none()
             .h(px(33.))
             .px(px(11.))

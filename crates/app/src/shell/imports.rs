@@ -16,7 +16,7 @@ impl Workspace {
                 if !from_picker {
                     self.set_mode(Mode::Analyse, cx);
                 }
-                self.import_analysis_files(paths, window, cx);
+                self.import_analysis_files(paths, from_picker, window, cx);
             }
             Some(ClipboardImport::Screenshot(image)) => {
                 self.preview_imported_images(vec![image], from_picker, window, cx);
@@ -38,13 +38,13 @@ impl Workspace {
     pub(super) fn import_analysis_files(
         &mut self,
         paths: Vec<PathBuf>,
+        new_tab: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let from_picker = self.new_tab_menu_open;
         let (images, game_files) = split_files(paths);
         if game_files.is_empty() {
-            self.preview_imported_images(images, from_picker, window, cx);
+            self.preview_imported_images(images, new_tab, window, cx);
             return;
         }
 
@@ -54,15 +54,15 @@ impl Workspace {
                 .background_spawn(async move { read_game_files(&game_files) })
                 .await;
             let _ = this.update_in(cx, |workspace, window, cx| {
-                if !from_picker && games.is_empty() {
+                if !new_tab && games.is_empty() {
                     let _ = origin.update(cx, |screen, cx| {
                         screen.start_image_import(images, false, cx);
                     });
-                } else if from_picker || origin.upgrade().is_some() {
+                } else if new_tab || origin.upgrade().is_some() {
                     for tree in games {
                         workspace.open_analysis(tree, window, cx);
                     }
-                    workspace.preview_imported_images(images, from_picker, window, cx);
+                    workspace.preview_imported_images(images, new_tab, window, cx);
                 }
                 if !errors.is_empty() {
                     workspace.model.toast(errors.join("\n"), cx);

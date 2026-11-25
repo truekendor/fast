@@ -696,21 +696,36 @@ impl Render for Workspace {
                             .flex_1()
                             .min_h_0()
                             .w_full()
+                            .child(body)
                             .when(
                                 self.mode == Mode::Analyse && !self.new_tab_menu_open,
                                 |area| {
-                                    area.on_drop(cx.listener(
-                                        |workspace, files: &gpui::ExternalPaths, window, cx| {
-                                            workspace.import_analysis_files(
-                                                files.paths().to_vec(),
-                                                window,
-                                                cx,
-                                            );
-                                        },
-                                    ))
+                                    area.group("analyse-file-drop")
+                                        .on_drop(cx.listener(
+                                            |workspace, files: &gpui::ExternalPaths, window, cx| {
+                                                workspace.import_analysis_files(
+                                                    files.paths().to_vec(),
+                                                    false,
+                                                    window,
+                                                    cx,
+                                                );
+                                            },
+                                        ))
+                                        .child(
+                                            div()
+                                                .absolute()
+                                                .inset_0()
+                                                .border_2()
+                                                .border_dashed()
+                                                .border_color(rgb(T.accent))
+                                                .opacity(0.)
+                                                .group_drag_over::<gpui::ExternalPaths>(
+                                                    "analyse-file-drop",
+                                                    |style| style.opacity(1.),
+                                                ),
+                                        )
                                 },
                             )
-                            .child(body)
                             .when(self.new_tab_menu_open, |area| {
                                 area.child(self.new_tab_picker(cx))
                             }),
