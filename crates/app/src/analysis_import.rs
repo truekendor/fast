@@ -9,6 +9,15 @@ use std::{
 use chess_core::{GameTree, parse_epd, parse_pgn};
 use gpui::{ClipboardEntry, ClipboardItem, Image};
 
+/// Image formats accepted by the screenshot decoder.
+pub(crate) const SCREENSHOT_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "bmp", "webp"];
+
+/// Extensions for uncompressed chess notation files.
+pub(crate) const CHESS_FILE_EXTENSIONS: &[&str] = &["pgn", "fen", "epd"];
+
+/// The compound extension for gzip-compressed PGN.
+pub(crate) const COMPRESSED_PGN_EXTENSION: &str = "pgn.gz";
+
 /// Screenshot data from an external file or the system clipboard.
 pub(crate) enum ImageInput {
     File(PathBuf),
@@ -62,13 +71,13 @@ pub(crate) fn split_files(paths: Vec<PathBuf>) -> (Vec<ImageInput>, Vec<PathBuf>
 pub(crate) fn supports_drop(paths: &[PathBuf]) -> bool {
     !paths.is_empty()
         && paths.iter().all(|path| {
-            is_screenshot(path) || has_extension(path, &["pgn", "fen", "epd"]) || is_pgn_gzip(path)
+            is_screenshot(path) || has_extension(path, CHESS_FILE_EXTENSIONS) || is_pgn_gzip(path)
         })
 }
 
 /// Recognizes the image formats accepted by the screenshot decoder.
 fn is_screenshot(path: &Path) -> bool {
-    has_extension(path, &["png", "jpeg", "jpg", "bmp", "webp"])
+    has_extension(path, SCREENSHOT_EXTENSIONS)
 }
 
 /// Matches filename extensions without regard to case.
@@ -82,10 +91,12 @@ fn has_extension(path: &Path, formats: &[&str]) -> bool {
 
 /// Recognizes the two-part extension used by gzip-compressed PGN files.
 fn is_pgn_gzip(path: &Path) -> bool {
-    has_extension(path, &["gz"])
-        && path
-            .file_stem()
-            .is_some_and(|stem| has_extension(Path::new(stem), &["pgn"]))
+    path.file_stem()
+        .zip(path.extension())
+        .is_some_and(|(stem, ext)| {
+            let (inner, outer) = COMPRESSED_PGN_EXTENSION.split_once('.').unwrap();
+            ext.eq_ignore_ascii_case(outer) && has_extension(Path::new(stem), &[inner])
+        })
 }
 
 /// Reads all games and positions, preserving successful files when another import fails.

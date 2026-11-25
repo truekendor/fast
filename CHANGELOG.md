@@ -4,6 +4,7 @@ Settings › Changelog shows this file. Describe the finished changes since each
 
 ## 0.1.4
 
+- Analyse and New tab: the unsupported-format warning groups image and chess extensions for easier reading.
 - Analyse and New tab: the drop prompt warns about unsupported formats before you release the file.
 - Analyse and New tab: a centered prompt shows where to drop files while dragging them.
 - New tab: closing the last tab shows the tab picker without opening a replacement.

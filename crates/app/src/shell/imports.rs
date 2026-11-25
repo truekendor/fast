@@ -6,7 +6,8 @@ use gpui::ExternalPaths;
 
 use super::*;
 use crate::analysis_import::{
-    ClipboardImport, ImageInput, clipboard_input, read_game_files, split_files, supports_drop,
+    CHESS_FILE_EXTENSIONS, COMPRESSED_PGN_EXTENSION, ClipboardImport, ImageInput,
+    SCREENSHOT_EXTENSIONS, clipboard_input, read_game_files, split_files, supports_drop,
 };
 
 /// The destination selected by the area that receives the drop.
@@ -36,20 +37,10 @@ pub(super) fn file_drop_border(files: &ExternalPaths) -> u32 {
 
 /// Draws the appropriate prompt only while the cursor is dragging over the area.
 fn file_drop_prompt(accepted: bool) -> impl IntoElement {
-    let (colour, icon, title, description) = if accepted {
-        (
-            T.accent,
-            "icons/download.svg",
-            "Drop files to import",
-            "Screenshots and chess files open in Analyse.",
-        )
+    let (colour, icon, title) = if accepted {
+        (T.accent, "icons/download.svg", "Drop files to import")
     } else {
-        (
-            T.warn,
-            "icons/x.svg",
-            "Unsupported file format",
-            "Supported formats: PNG, JPEG, BMP, WebP, PGN, PGN.gz, FEN and EPD.",
-        )
+        (T.warn, "icons/x.svg", "Unsupported file format")
     };
     div()
         .absolute()
@@ -87,7 +78,61 @@ fn file_drop_prompt(accepted: bool) -> impl IntoElement {
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(ui::i18n::t(title)),
                 )
-                .child(div().text_as(13., T.fg_2).child(ui::i18n::t(description))),
+                .when(accepted, |prompt| {
+                    prompt.child(
+                        div()
+                            .text_as(13., T.fg_2)
+                            .child(ui::i18n::t("Screenshots and chess files open in Analyse.")),
+                    )
+                })
+                .when(!accepted, |prompt| {
+                    prompt.child(
+                        v_flex()
+                            .w_full()
+                            .gap(px(10.))
+                            .pt(px(4.))
+                            .child(file_extension_group(
+                                "Images",
+                                SCREENSHOT_EXTENSIONS.iter().copied(),
+                            ))
+                            .child(file_extension_group(
+                                "Chess files",
+                                CHESS_FILE_EXTENSIONS
+                                    .iter()
+                                    .copied()
+                                    .chain([COMPRESSED_PGN_EXTENSION]),
+                            )),
+                    )
+                }),
+        )
+}
+
+/// Groups supported extensions under a label and displays them as monospaced chips.
+fn file_extension_group(
+    label: &'static str,
+    extensions: impl IntoIterator<Item = &'static str>,
+) -> impl IntoElement {
+    v_flex()
+        .items_start()
+        .gap(px(6.))
+        .p(px(10.))
+        .rounded(px(4.))
+        .bg(rgb(T.surface_2))
+        .child(ui::widgets::section_label(label))
+        .child(
+            h_flex()
+                .flex_wrap()
+                .gap(px(4.))
+                .children(extensions.into_iter().map(|ext| {
+                    ui::widgets::mono(format!(".{ext}"))
+                        .whitespace_nowrap()
+                        .text_as(12., T.fg)
+                        .px(px(6.))
+                        .py(px(2.))
+                        .rounded(px(4.))
+                        .border_as(T.border_strong)
+                        .bg(rgb(T.surface))
+                })),
         )
 }
 
