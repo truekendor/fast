@@ -55,6 +55,10 @@ textured boards, and screenshots with up to twelve boards. `images` holds the or
 center x, center y, width and height. The fixtures are a fixed regression sample from the
 training split.
 
+Label the playing area of every complete 8×8 board, including editor previews and thumbnails.
+Leave clipped board fragments outside the annotation set. The original screenshot pixels are
+kept so the benchmark includes the surrounding UI, compression and image noise.
+
 ```sh
 python -B -m services.chessboard_detection.benchmark
 ```
@@ -66,7 +70,6 @@ frames with a match, matched boards out of all labels, and how many returned gri
 label. IoU measures the board boundary. The detector tests also compare grid intersections
 directly.
 
-On this sample the color detector matches 6 of 42 labels, including 5 of 35 in multi-board
-frames. The line detector matches 41 of 42 labels, including all 35 in multi-board frames.
-Three additional grids in `0057` and `0082` correspond to board thumbnails absent from the
-labels. The line detector misses the board in `0033`.
+On the audited sample the color detector matches 6 of 46 labels. The line detector matches
+44 of 46 labels, including 40 of 41 in multi-board frames. All 44 grids it returns match a
+label. The two misses are the board in `0033` and the lower-right thumbnail in `0082`.
