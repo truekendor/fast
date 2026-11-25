@@ -27,3 +27,25 @@ point layout accommodates a future perspective-aware detector. This demo is inte
 full, axis-aligned boards with solid cell colors. Textured or heavily compressed boards,
 clipped boards and perspective views may fail. Piece recognition and board orientation are
 outside this geometry service.
+
+## Labelled screenshots
+
+`fixtures/screenshots` contains the 15 original screenshots selected from the board detection
+dataset and their matching YOLO labels. The samples include YouTube frames, small thumbnails,
+textured boards, and screenshots with up to twelve boards. `images` holds the originals and
+`labels` uses the same file stems. Each label row contains class `0`, followed by normalized
+center x, center y, width and height. The fixtures are a fixed regression sample from the
+training split.
+
+```sh
+python -B -m services.chessboard_detection.benchmark
+```
+
+The benchmark compares the grid's bounding box with the annotated boards. An intersection over
+union (IoU) of at least 0.90 counts as a match. It reports frames with a match, matched boards
+out of all labels, and how many returned grids match a label. IoU measures the board boundary.
+The smaller detector tests also compare all 81 grid intersections directly.
+
+The initial detector returned six matching grids across 15 frames, covering six of the 42
+labelled boards. It found a match in one of seven frames with one board and five of eight
+frames with multiple boards. The regression test checks that those six frames still match.

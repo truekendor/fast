@@ -6,11 +6,22 @@ import unittest
 import cv2
 import numpy as np
 
+from .benchmark import evaluate
 from .detector import detect_grid
 
 
 class DetectionTests(unittest.TestCase):
     """Verify the positions and spacing of the returned grids."""
+
+    def test_labelled_screenshots(self) -> None:
+        """Keep locating the six boards that the first OpenCV prototype could find."""
+        results = evaluate()
+        self.assertEqual(len(results), 15)
+        self.assertEqual(sum(result.labelled_boards for result in results), 42)
+        baseline = {"0004", "0012", "0028", "0050", "0082", "0108"}
+        matched = {Path(result.filename).stem[-4:] for result in results if result.matched_boards}
+        missing = baseline - matched
+        self.assertFalse(missing, f"Previously matched screenshots missed: {sorted(missing)}")
 
     def test_fast_screenshots(self) -> None:
         """Find the playable board, excluding its frame and coordinates."""
