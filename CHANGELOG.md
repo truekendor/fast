@@ -4,6 +4,7 @@ Settings › Changelog shows this file. Describe the finished changes since each
 
 ## 0.1.4
 
+- Analyse: translucent shading makes selected and detected boards easier to see on the screenshot.
 - Analyse: choose an outlined board on the original screenshot or draw a manual square, with the position preview alongside.
 - Analyse: drop or paste screenshots for a board preview, or drop chess files to open them in tabs.
 - Analyse: import a position from a PNG or JPEG, preview the detected boards and open the one you choose.
