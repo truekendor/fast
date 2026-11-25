@@ -39,7 +39,7 @@ agree within 2 pixels, with a tighter limit for small boards. A board must measu
 80 pixels on its shorter side in the source image.
 
 ```sh
-python -B -m services.chessboard_detection services/chessboard_detection/fixtures/screenshots/images/chessboard_detect_0100.jpg --detector lines --overlay lines.png
+python -B -m services.chessboard_detection services/chessboard_detection/fixtures/screenshots/images/chessboard_detect_0100.png --detector lines --overlay lines.png
 ```
 
 The line detector returns `grids`, a list in image order.
@@ -56,9 +56,12 @@ class `0`, followed by normalized center x, center y, width and height. The fixt
 regression sample from the training split.
 
 Label the playing area of every complete 8×8 board at least 80 pixels on its shorter side.
-Leave clipped fragments outside the annotation set. Five smaller editor and desktop previews
-were masked in `0002`, `0057` and `0082`, and their labels were removed. Those edited copies are
-PNG files, with the source pixels preserved outside the mask.
+Leave clipped fragments outside the annotation set. Five smaller previews in `0002`, `0057`
+and `0082` were removed from the images and labels. In screenshots with readable interface
+content, pixels outside the labelled boards are replaced with a neutral background. The
+video timestamp over the board in `0001` is masked separately. The edited PNGs retain the
+original image dimensions and annotation coordinates. The other screenshots retain their
+pixels and have no EXIF, application metadata or comments beyond the standard JPEG header.
 
 ```sh
 python -B -m services.chessboard_detection.benchmark

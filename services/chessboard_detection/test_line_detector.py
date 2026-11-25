@@ -47,7 +47,7 @@ class LineDetectionTests(unittest.TestCase):
     def test_finds_all_boards_in_montage(self) -> None:
         """Find all eight distinct labelled boards in a screen with adjacent games."""
         fixtures = Path(__file__).with_name("fixtures") / "screenshots"
-        path = fixtures / "images" / "chessboard_detect_0100.jpg"
+        path = fixtures / "images" / "chessboard_detect_0100.png"
         image = cv2.imdecode(np.frombuffer(path.read_bytes(), dtype=np.uint8), cv2.IMREAD_COLOR)
         height, width = image.shape[:2]
         labels = _read_labels(fixtures / "labels" / f"{path.stem}.txt", width, height)
