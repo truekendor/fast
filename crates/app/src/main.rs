@@ -22,6 +22,7 @@ mod fastchess;
 mod file_dialog;
 mod format;
 mod game_download;
+mod grid_command;
 mod kibitz;
 mod licenses;
 mod live;
@@ -141,10 +142,13 @@ fn open_main_window(cli: Cli, cx: &mut App) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn main() {
+fn main() -> std::process::ExitCode {
     // Fast also runs as the guard that stops fastchess when Fast dies; see `process_guard`.
     if let Some(code) = process_guard::run_if_requested() {
         std::process::exit(code);
+    }
+    if let Some(code) = grid_command::run_if_requested() {
+        return code;
     }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let cli = Cli::parse(std::env::args());
@@ -170,6 +174,7 @@ fn main() {
             .detach();
             cx.activate(true);
         });
+    std::process::ExitCode::SUCCESS
 }
 
 #[cfg(test)]

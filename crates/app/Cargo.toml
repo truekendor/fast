@@ -15,6 +15,7 @@ gpui_platform.workspace = true
 gpui-component.workspace = true
 gpui-kit-assets = { git = "https://github.com/longbridge/gpui-component", rev = "48ac25b50c81ca5e34ec1631e3efabe22f4af64a" }
 chess_core.workspace = true
+chessboard_detection = { path = "../chessboard_detection" }
 engine.workspace = true
 db.workspace = true
 rusqlite.workspace = true
@@ -31,6 +32,7 @@ log.workspace = true
 env_logger.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 toml.workspace = true
 dirs.workspace = true
 smol.workspace = true

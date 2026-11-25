@@ -82,3 +82,21 @@ On the masked sample the color detector matches 6 of 41 labels. The line detecto
 The [comparison of validation checks](ABLATION.md) measures how the line detector behaves
 with each check disabled. It includes a rectangular contour baseline and screenshots without
 boards. Run `python -B -m services.chessboard_detection.ablation` to reproduce the comparison.
+
+## Native detector
+
+`crates/chessboard_detection` implements the line detector with pitch, crossing and boundary
+checks. The fit allows the horizontal and vertical pitches to differ. Fast decodes PNG or
+JPEG and writes the same `grids` JSON as the Python line detector, using a new output file.
+The command runs inside `fast.exe` and starts without opening the UI or a profile.
+
+```powershell
+cargo build --release -p fast
+Start-Process -Wait -FilePath target/release/fast.exe -ArgumentList @('--detect-grid', 'services/chessboard_detection/fixtures/screenshots/images/chessboard_detect_0100.png', 'grids.json')
+python -B -m services.chessboard_detection.compare_rust target/release/fast.exe
+```
+
+The comparison script runs on the 15 anonymized fixtures. It uses Python/OpenCV only for
+the reference implementation, with its square check disabled to match the Rust detector.
+Both implementations find 40 of 41 boards at IoU ≥ 0.90 and 39 at IoU ≥ 0.95, with no extra
+grids. Both find all 33 labels in multi-board frames at IoU ≥ 0.90 and miss `0033`.

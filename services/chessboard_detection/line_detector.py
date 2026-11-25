@@ -273,10 +273,10 @@ def _distinct_fits(fits: list[_Fit]) -> list[_Fit]:
     return sorted(distinct, key=lambda f: (f.y, f.x))
 
 
-def detect_line_grids(image: np.ndarray) -> list[LineGrid]:
+def detect_line_grids(image: np.ndarray, *, check_square: bool = True) -> list[LineGrid]:
     """Return distinct 8×8 grids in screenshot order, with support counted at crossings."""
     smooth, gx, gy = _gradients(image)
-    checks = _Checks()
+    checks = _Checks(square=check_square)
     fits = []
     for candidate in _propose(smooth):
         axes = _locate_axes(gx, gy, candidate)

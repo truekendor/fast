@@ -5,6 +5,7 @@
 | Crate | Depends on GPUI | Responsibility |
 | --- | --- | --- |
 | `chess_core` | no | Game tree (mainline, variations, NAGs, comments), PGN in/out, notation, opening table |
+| `chessboard_detection` | no | Finds 8×8 grids in grayscale screenshots and returns their intersections |
 | `engine` | no | UCI parser, supervised engine processes, analysis events |
 | `db` | no | One SQLite file per database, streaming PGN import, filters, position search, editing and deleting games, copying a database, notes |
 | `trainer` | no | Repertoire tree, SM-2 scheduler, leak and gap detection |
@@ -24,6 +25,12 @@ runs outside GPUI and Cargo and needs no Fast profile.
 The demo provides a color-based detector for one grid and a line-based detector for multiple
 grids. Both return intersections in source pixels and can be compared with the same fixture
 benchmark.
+
+Fast also runs grid detection directly through `--detect-grid IMAGE OUTPUT.json`. The
+command decodes a PNG or JPEG with the existing Rust image library and calls
+`chessboard_detection` before loading GPUI or a user profile. The detector crate takes
+grayscale pixels and has no dependencies. The Python service runs only as a separate
+experiment and reference benchmark.
 
 ## Release packaging
 
