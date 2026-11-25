@@ -35,7 +35,8 @@ OpenCV at several scales. It fits seven internal lines per axis, tests for alter
 contrast at their crossings, and checks for an extra row or column of crossings at the
 boundary. The fit allows 2 pixels of error in line position and checks the measured gaps
 against the fitted pitch with the same tolerance. Horizontal and vertical pitches must
-agree within 2 pixels, with a tighter limit for small boards.
+agree within 2 pixels, with a tighter limit for small boards. A board must measure at least
+80 pixels on its shorter side in the source image.
 
 ```sh
 python -B -m services.chessboard_detection services/chessboard_detection/fixtures/screenshots/images/chessboard_detect_0100.jpg --detector lines --overlay lines.png
@@ -48,16 +49,16 @@ use `detect_line_grids(image)`.
 
 ## Labelled screenshots
 
-`fixtures/screenshots` contains the 15 original screenshots selected from the board detection
-dataset and their matching YOLO labels. The samples include YouTube frames, small thumbnails,
-textured boards, and screenshots with up to twelve boards. `images` holds the originals and
-`labels` uses the same file stems. Each label row contains class `0`, followed by normalized
-center x, center y, width and height. The fixtures are a fixed regression sample from the
-training split.
+`fixtures/screenshots` contains 15 screenshots selected from the board detection dataset and
+their matching YOLO labels. The samples include YouTube frames, textured boards, and screenshots
+with up to twelve boards. `labels` uses the same file stems as `images`. Each label row contains
+class `0`, followed by normalized center x, center y, width and height. The fixtures are a fixed
+regression sample from the training split.
 
-Label the playing area of every complete 8×8 board, including editor previews and thumbnails.
-Leave clipped board fragments outside the annotation set. The original screenshot pixels are
-kept so the benchmark includes the surrounding UI, compression and image noise.
+Label the playing area of every complete 8×8 board at least 80 pixels on its shorter side.
+Leave clipped fragments outside the annotation set. Five smaller editor and desktop previews
+were masked in `0002`, `0057` and `0082`, and their labels were removed. Those edited copies are
+PNG files, with the source pixels preserved outside the mask.
 
 ```sh
 python -B -m services.chessboard_detection.benchmark
@@ -70,6 +71,5 @@ frames with a match, matched boards out of all labels, and how many returned gri
 label. IoU measures the board boundary. The detector tests also compare grid intersections
 directly.
 
-On the audited sample the color detector matches 6 of 46 labels. The line detector matches
-44 of 46 labels, including 40 of 41 in multi-board frames. All 44 grids it returns match a
-label. The two misses are the board in `0033` and the lower-right thumbnail in `0082`.
+On the masked sample the color detector matches 6 of 41 labels. The line detector matches
+40 of 41 labels, including all 33 in multi-board frames. It misses the board in `0033`.

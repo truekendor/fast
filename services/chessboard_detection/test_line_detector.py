@@ -13,6 +13,19 @@ from .line_detector import detect_line_grids
 class LineDetectionTests(unittest.TestCase):
     """Check grid geometry and handling of multiple boards."""
 
+    def test_ignores_thumbnails(self) -> None:
+        """Ignore a complete 64-pixel board beside an 80-pixel board."""
+        image = np.full((116, 194, 3), 55, dtype=np.uint8)
+        tiles = (np.indices((8, 8)).sum(axis=0) % 2 * 100 + 100).astype(np.uint8)
+        for x, pitch in ((12, 8), (100, 10)):
+            side = 8 * pitch
+            board = cv2.resize(tiles, (side, side), interpolation=cv2.INTER_NEAREST)
+            image[12 : 12 + side, x : x + side] = board[:, :, None]
+
+        grids = detect_line_grids(image)
+        self.assertEqual(len(grids), 1)
+        np.testing.assert_allclose(grids[0].intersections[0][0], (100, 12), atol=1, rtol=0)
+
     def test_accepts_rounded_cell_boundaries(self) -> None:
         """Allow small spacing and aspect differences while rejecting an elongated grid."""
         image = np.full((290, 635, 3), 70, dtype=np.uint8)

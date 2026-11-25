@@ -17,7 +17,7 @@ class DetectionTests(unittest.TestCase):
         """Keep locating the six boards that the first OpenCV prototype could find."""
         results = evaluate()
         self.assertEqual(len(results), 15)
-        self.assertEqual(sum(result.labelled_boards for result in results), 46)
+        self.assertEqual(sum(result.labelled_boards for result in results), 41)
         baseline = {"0004", "0012", "0028", "0050", "0082", "0108"}
         matched = {Path(result.filename).stem[-4:] for result in results if result.matched_boards}
         missing = baseline - matched

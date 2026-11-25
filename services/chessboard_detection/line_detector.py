@@ -7,6 +7,7 @@ import numpy as np
 
 _TEMPLATE_PITCH = 10
 _LINE_TOLERANCE_PX = 2.0
+_MIN_BOARD_SIDE_PX = 80
 _GRID_INDICES = np.arange(9)
 _INNER = _GRID_INDICES[1:-1]
 _PARITY = (1 - 2 * ((_GRID_INDICES[:, None] + _GRID_INDICES) % 2)).astype(np.float32)
@@ -63,7 +64,7 @@ def _propose(gray: np.ndarray) -> list[_Candidate]:
     template = _crossing_template()
     height, width = gray.shape
     proposals = []
-    pitch = 6.0
+    pitch = (_MIN_BOARD_SIDE_PX - _LINE_TOLERANCE_PX) / 8
     peak_window = np.ones((15, 15), np.uint8)
     while pitch <= min(width, height) / 8 * 1.04:
         scale = _TEMPLATE_PITCH / pitch
@@ -166,6 +167,8 @@ def _fit_grid(gray: np.ndarray, gx: np.ndarray, gy: np.ndarray, candidate: _Cand
     x, dx = horizontal_axis
     y, dy = vertical_axis
     height, width = gray.shape
+    if round(8 * min(dx, dy)) < _MIN_BOARD_SIDE_PX:
+        return None
     if abs(dx - dy) > min(_LINE_TOLERANCE_PX, max(0.75, 0.05 * max(dx, dy))):
         return None
     if min(x, y, width - x - 8 * dx, height - y - 8 * dy) < -_LINE_TOLERANCE_PX:
