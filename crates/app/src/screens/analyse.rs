@@ -914,7 +914,7 @@ impl Render for AnalyseScreen {
         self.sync_online(cx);
         let menu = self.render_context_menu(cx);
         let status_bar = self.render_status_bar(cx);
-        let image_import = self.render_image_import(cx);
+        let image_import = self.render_image_import(viewport, cx);
         let mut side = Some(
             v_flex()
                 .gap(px(8.))

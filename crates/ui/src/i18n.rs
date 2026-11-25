@@ -238,6 +238,24 @@ pub fn translate(language: Language, text: &str) -> &str {
             "No chessboards found in this image." => {
                 "In diesem Bild wurden keine Schachbretter gefunden."
             }
+            "Original screenshot" => "Originalbild",
+            "Image {} of {}" => "Bild {} von {}",
+            "Board {} of {}" => "Brett {} von {}",
+            "Previous image" => "Vorheriges Bild",
+            "Next image" => "Nächstes Bild",
+            "Previous board" => "Vorheriges Brett",
+            "Next board" => "Nächstes Brett",
+            "Select area manually" => "Bereich manuell wählen",
+            "Use automatic detection" => "Automatische Erkennung verwenden",
+            "Recognize selected area" => "Gewählten Bereich erkennen",
+            "Recognizing…" => "Wird erkannt…",
+            "The selected board will appear here." => "Das ausgewählte Brett erscheint hier.",
+            "Could not recognize the selected area." => {
+                "Der gewählte Bereich konnte nicht erkannt werden."
+            }
+            "Drag the frame or its corners. Use arrow keys to move and + or − to resize." => {
+                "Ziehen Sie den Rahmen oder seine Ecken. Mit den Pfeiltasten verschieben, mit + oder − skalieren."
+            }
             "Recognized position" => "Erkannte Stellung",
             "Rotate position" => "Stellung drehen",
             "White to move" => "Weiß am Zug",
@@ -246,8 +264,6 @@ pub fn translate(language: Language, text: &str) -> &str {
             "This position needs corrections before it can be opened." => {
                 "Diese Stellung muss vor dem Öffnen korrigiert werden."
             }
-            "Boards in the image" => "Bretter im Bild",
-            "Board {}" => "Brett {}",
             "Export" => "Exportieren",
             "Reopen" => "Wieder öffnen",
             "Repertoires" => "Repertoires",

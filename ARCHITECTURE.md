@@ -40,8 +40,9 @@ reuses one CPU classifier for all detected boards. `piece_recognition` embeds th
 weights and runs them through `tract` in process. Each recognized board includes its grid and
 the piece-placement field of FEN in both orientations. The export and TensorFlow.js reference
 tools run separately from Cargo and the Fast executable.
-Analyse calls the same Rust image service on a background task, then shows the source crop
-and predicted positions in a dialog. A valid selection opens in a new Analyse tab. A guess
+Analyse calls the same Rust image service on a background task, then outlines the detected
+boards on the original screenshot beside the position preview. A manual square can supply
+the 8×8 cell boundaries to the same classifier when automatic detection misses a board. A valid selection opens in a new Analyse tab. A guess
 that needs correction can be sent to the position editor. The Analyse import module routes
 dropped paths and native clipboard entries to that same preview or to the existing chess
 parsers. It reads screenshot and notation files on background tasks.

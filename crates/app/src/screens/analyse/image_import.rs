@@ -1,82 +1,127 @@
-//! Imports a screenshot through a board selection and confirmation dialog.
+//! The image import dialog, its worker tasks, and the recognized position preview.
 
 use std::sync::Arc;
 
 use chess_core::{Chess, Color, shakmaty::Board};
-use gpui::{App, RenderImage, img};
+use gpui::{App, RenderImage, Size};
 use ui::{i18n::t, widgets::dialog};
 
 use super::*;
 use crate::{analysis_import::ImageInput, board_image};
 
-/// The progress or result of importing a screenshot into this Analyse tab.
+mod selection;
+
+use selection::{ImageRect, SquareSelection};
+
+/// The progress or result of importing screenshots into this Analyse tab.
 pub(super) enum ImageImport {
     Loading { _task: Task<()> },
     Failed,
-    NoBoards,
-    Ready(BoardChoices),
+    Ready(Box<BoardChoices>),
 }
 
-/// The boards found in one image and the settings for the selected position.
+/// The current source image, board selection and position settings.
 pub(super) struct BoardChoices {
-    candidates: Vec<Candidate>,
+    sources: Vec<Screenshot>,
+    source: usize,
     selected: usize,
+    manual: Option<ManualSelection>,
     rotated: bool,
     turn: Color,
     preview: Entity<BoardView>,
 }
 
-/// A board's source crop and recognized pieces.
+/// The original RGB pixels, their scaled display copy and all detected boards.
+struct Screenshot {
+    pixels: Arc<image::RgbImage>,
+    display: Arc<RenderImage>,
+    candidates: Vec<Candidate>,
+}
+
+/// The outline and recognized pieces of an automatically detected board.
 struct Candidate {
-    thumbnail: Arc<RenderImage>,
+    outline: ImageRect,
     board: Board,
 }
 
-/// Recognizes boards and makes small previews of the original image on the worker thread.
-fn read_candidates(input: &ImageInput) -> anyhow::Result<Vec<Candidate>> {
-    let image = input.read()?;
-    Ok(board_image::recognize(&image, false)?
-        .into_iter()
-        .map(|board_image::RecognizedBoard { grid, board }| {
-            let crop =
-                board_image::crop(&image, grid.intersections[0][0], grid.intersections[8][8]);
-            let mut thumbnail = image::DynamicImage::ImageRgb8(crop)
-                .thumbnail(224, 224)
-                .into_rgba8();
-            // GPUI consumes BGRA frames.
-            for pixel in thumbnail.pixels_mut() {
-                pixel.0.swap(0, 2);
-            }
-            Candidate {
-                thumbnail: Arc::new(RenderImage::new([image::Frame::new(thumbnail)])),
-                board,
-            }
-        })
-        .collect())
+/// A user-selected square and the result for its current bounds.
+struct ManualSelection {
+    square: SquareSelection,
+    result: Option<Board>,
+    task: Option<Task<()>>,
+    failed: bool,
+    focus: FocusHandle,
 }
 
-impl Candidate {
-    /// Puts the recognized pieces in the orientation chosen by the user.
-    fn oriented_board(&self, rotated: bool) -> Board {
-        let mut board = self.board.clone();
-        if rotated {
-            board.rotate_180();
+/// Reads a screenshot and preserves it even when automatic detection finds no board.
+fn read_screenshot(input: &ImageInput) -> anyhow::Result<Screenshot> {
+    let pixels = input.read()?;
+    let candidates = match board_image::recognize(&pixels, false) {
+        Ok(boards) => boards
+            .into_iter()
+            .map(|board_image::RecognizedBoard { grid, board }| Candidate {
+                outline: ImageRect {
+                    start: grid.intersections[0][0],
+                    end: grid.intersections[8][8],
+                },
+                board,
+            })
+            .collect(),
+        Err(err) => {
+            log::warn!("Automatic board recognition failed: {err:#}");
+            Vec::new()
         }
-        board
+    };
+
+    // Keep the original pixels for inference and cap the size of the GPU upload.
+    let (width, height) = pixels.dimensions();
+    let ratio = (1440. / f64::from(width.max(height))).min(1.);
+    let scaled = image::imageops::resize(
+        &pixels,
+        (f64::from(width) * ratio).round().max(1.) as u32,
+        (f64::from(height) * ratio).round().max(1.) as u32,
+        image::imageops::FilterType::Triangle,
+    );
+    let mut display = image::DynamicImage::ImageRgb8(scaled).into_rgba8();
+    // GPUI consumes BGRA frames.
+    for pixel in display.pixels_mut() {
+        pixel.0.swap(0, 2);
     }
+    Ok(Screenshot {
+        pixels: Arc::new(pixels),
+        display: Arc::new(RenderImage::new([image::Frame::new(display)])),
+        candidates,
+    })
 }
 
 impl BoardChoices {
-    /// Returns the pieces for the currently selected board and orientation.
-    fn oriented_board(&self) -> Board {
-        self.candidates[self.selected].oriented_board(self.rotated)
+    /// Returns the original screenshot currently shown in the dialog.
+    fn screenshot(&self) -> &Screenshot {
+        &self.sources[self.source]
     }
 
-    /// Updates the preview to reflect the selected crop and its orientation.
+    /// Returns the current guess with the requested orientation applied.
+    fn oriented_board(&self) -> Option<Board> {
+        let mut board = match &self.manual {
+            Some(manual) => manual.result.clone()?,
+            None => self
+                .screenshot()
+                .candidates
+                .get(self.selected)?
+                .board
+                .clone(),
+        };
+        if self.rotated {
+            board.rotate_180();
+        }
+        Some(board)
+    }
+
+    /// Refreshes the board preview after a selection or orientation change.
     fn update_preview(&self, cx: &mut App) {
         let board = self.oriented_board();
         self.preview
-            .update(cx, |view, cx| view.set_editing(Some(board), cx));
+            .update(cx, |view, cx| view.set_editing(board, cx));
     }
 }
 
@@ -100,43 +145,42 @@ impl AnalyseScreen {
         );
     }
 
-    /// Reuses the board-selection dialog for image files and clipboard screenshots.
+    /// Uses the same preview for images from the picker, clipboard and file drops.
     pub(crate) fn start_image_import(&mut self, inputs: Vec<ImageInput>, cx: &mut Context<Self>) {
         if inputs.is_empty() || self.image_import.is_some() {
             return;
         }
 
         let task = cx.spawn(async move |this, cx| {
-            let (candidates, decoded, failed) = cx
+            let (sources, failed) = cx
                 .background_spawn(async move {
-                    let mut candidates = Vec::new();
-                    let mut decoded = false;
+                    let mut sources = Vec::new();
                     let mut failed = false;
                     for input in inputs {
-                        match read_candidates(&input) {
-                            Ok(found) => {
-                                decoded = true;
-                                candidates.extend(found);
-                            }
+                        match read_screenshot(&input) {
+                            Ok(screenshot) => sources.push(screenshot),
                             Err(err) => {
                                 failed = true;
                                 log::warn!("Image import failed: {err:#}");
                             }
                         }
                     }
-                    (candidates, decoded, failed)
+                    (sources, failed)
                 })
                 .await;
             let _ = this.update(cx, |screen, cx| {
-                screen.image_import = Some(if !decoded {
+                screen.image_import = Some(if sources.is_empty() {
                     ImageImport::Failed
-                } else if candidates.is_empty() {
-                    ImageImport::NoBoards
                 } else {
+                    if failed {
+                        screen.model.toast("Some images could not be read.", cx);
+                    }
                     let prefs = screen.board.read(cx).prefs();
                     let choices = BoardChoices {
-                        candidates,
+                        sources,
+                        source: 0,
                         selected: 0,
+                        manual: None,
                         rotated: false,
                         turn: Color::White,
                         preview: cx.new(|cx| {
@@ -146,11 +190,8 @@ impl AnalyseScreen {
                         }),
                     };
                     choices.update_preview(cx);
-                    ImageImport::Ready(choices)
+                    ImageImport::Ready(Box::new(choices))
                 });
-                if decoded && failed {
-                    screen.model.toast("Some images could not be read.", cx);
-                }
                 cx.notify();
             });
         });
@@ -158,7 +199,7 @@ impl AnalyseScreen {
         cx.notify();
     }
 
-    /// Applies a change to the selection or the settings for the prospective position.
+    /// Applies a change to whichever board is being previewed.
     fn update_image_choice(
         &mut self,
         change: impl FnOnce(&mut BoardChoices),
@@ -169,6 +210,50 @@ impl AnalyseScreen {
             choices.update_preview(cx);
             cx.notify();
         }
+    }
+
+    /// Classifies the current square on a worker and discards the result if the square changes.
+    fn recognize_image_selection(&mut self, cx: &mut Context<Self>) {
+        let Some(ImageImport::Ready(choices)) = &mut self.image_import else {
+            return;
+        };
+        let pixels = choices.screenshot().pixels.clone();
+        let Some(manual) = &mut choices.manual else {
+            return;
+        };
+        if manual.task.is_some() {
+            return;
+        }
+        let square = manual.square;
+        manual.failed = false;
+        manual.task = Some(cx.spawn(async move |this, cx| {
+            let [left, top, side] = square.pixel_bounds(pixels.dimensions());
+            let result = cx
+                .background_spawn(async move {
+                    board_image::recognize_selection(&pixels, left, top, side)
+                })
+                .await;
+            let _ = this.update(cx, |screen, cx| {
+                screen.update_image_choice(
+                    |choices| {
+                        if let Some(manual) = &mut choices.manual
+                            && manual.square == square
+                        {
+                            manual.task = None;
+                            match result {
+                                Ok(board) => manual.result = Some(board),
+                                Err(err) => {
+                                    log::warn!("Manual board recognition failed: {err:#}");
+                                    manual.failed = true;
+                                }
+                            }
+                        }
+                    },
+                    cx,
+                );
+            });
+        }));
+        cx.notify();
     }
 
     /// Opens a valid position in a new tab or sends an invalid guess to the editor.
@@ -193,8 +278,13 @@ impl AnalyseScreen {
         cx.notify();
     }
 
-    /// Draws the import dialog for the current stage of recognition.
-    pub(super) fn render_image_import(&self, cx: &mut Context<Self>) -> Option<ui::widgets::Modal> {
+    /// Draws the screenshot on the left and the inferred position on the right.
+    pub(super) fn render_image_import(
+        &self,
+        viewport: Size<Pixels>,
+        cx: &mut Context<Self>,
+    ) -> Option<ui::widgets::Modal> {
+        let width = (f32::from(viewport.width) - 48.).min(1000.);
         let body = match self.image_import.as_ref()? {
             ImageImport::Loading { .. } => {
                 import_message("Looking for chessboards…").into_any_element()
@@ -203,18 +293,19 @@ impl AnalyseScreen {
                 import_message("Could not read the image. Use PNG, JPEG, BMP or WebP.")
                     .into_any_element()
             }
-            ImageImport::NoBoards => {
-                import_message("No chessboards found in this image.").into_any_element()
-            }
-            ImageImport::Ready(choices) => {
-                self.render_image_choices(choices, cx).into_any_element()
-            }
+            ImageImport::Ready(choices) => h_flex()
+                .items_start()
+                .gap(px(16.))
+                .p(px(16.))
+                .child(self.render_screenshot(choices, width - 310., viewport.height, cx))
+                .child(self.render_position_preview(choices, cx))
+                .into_any_element(),
         };
         let this = cx.entity().downgrade();
         Some(dialog(
             "image-import-dialog",
             "Import position from image",
-            680.,
+            width,
             body,
             move |cx| {
                 let _ = this.update(cx, |screen, cx| {
@@ -225,10 +316,18 @@ impl AnalyseScreen {
         ))
     }
 
-    /// Shows the reconstructed board, controls and source crops.
-    fn render_image_choices(&self, choices: &BoardChoices, cx: &mut Context<Self>) -> gpui::Div {
+    /// Shows the selected position and the controls for opening it.
+    fn render_position_preview(&self, choices: &BoardChoices, cx: &mut Context<Self>) -> gpui::Div {
         let this = cx.entity();
-        let editor = PositionEditor::from_board(choices.oriented_board(), choices.turn);
+        let mut column = v_flex()
+            .w(px(260.))
+            .flex_none()
+            .gap(px(8.))
+            .child(section_label("Recognized position"));
+        let Some(board) = choices.oriented_board() else {
+            return column.child(import_message("The selected board will appear here."));
+        };
+        let editor = PositionEditor::from_board(board, choices.turn);
         let position = editor.position().map_err(|_| editor);
         let can_open = position.is_ok();
         let action = if can_open {
@@ -236,127 +335,48 @@ impl AnalyseScreen {
         } else {
             "Edit position"
         };
-        v_flex()
-            .p(px(16.))
-            .gap(px(16.))
+        column = column
             .child(
-                h_flex()
-                    .items_start()
-                    .gap(px(16.))
-                    .child(
-                        div()
-                            .size(px(256.))
-                            .flex_none()
-                            .child(choices.preview.clone()),
-                    )
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap(px(8.))
-                            .child(section_label("Recognized position"))
-                            .child(
-                                btn("rotate-image-position", "Rotate position")
-                                    .compact()
-                                    .on_click(this.listen(|screen, _, cx| {
-                                        screen.update_image_choice(
-                                            |choices| choices.rotated = !choices.rotated,
-                                            cx,
-                                        )
-                                    })),
-                            )
-                            .child(
-                                h_flex().gap(px(6.)).children(
-                                    [
-                                        (Color::White, "White to move"),
-                                        (Color::Black, "Black to move"),
-                                    ]
-                                    .map(|(turn, label)| {
-                                        btn(
-                                            ("image-position-turn", usize::from(turn.is_black())),
-                                            label,
-                                        )
-                                        .compact()
-                                        .selected(choices.turn == turn)
-                                        .on_click(
-                                            this.listen(move |screen, _, cx| {
-                                                screen.update_image_choice(
-                                                    |choices| choices.turn = turn,
-                                                    cx,
-                                                )
-                                            }),
-                                        )
-                                    }),
-                                ),
-                            )
-                            .when(!can_open, |column| {
-                                column.child(div().text_as(13., T.fg_2).child(t(
-                                    "This position needs corrections before it can be opened.",
-                                )))
-                            })
-                            .child(btn("confirm-image-position", action).primary().on_click(
-                                this.listen(move |screen, window, cx| {
-                                    screen.open_image_position(position.clone(), window, cx)
-                                }),
-                            )),
-                    ),
+                div()
+                    .size(px(248.))
+                    .flex_none()
+                    .child(choices.preview.clone()),
             )
-            .child(section_label("Boards in the image"))
-            .child(self.render_image_candidates(choices, cx))
-    }
-
-    /// Lets the user choose a board by its source crop or its keyboard-accessible button.
-    fn render_image_candidates(
-        &self,
-        choices: &BoardChoices,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
-        let this = cx.entity();
-        div()
-            .id("image-board-list")
-            .max_h(px(188.))
-            .overflow_y_scroll()
             .child(
-                h_flex().flex_wrap().gap(px(8.)).children(
-                    choices
-                        .candidates
-                        .iter()
-                        .enumerate()
-                        .map(|(index, candidate)| {
-                            let selected = index == choices.selected;
-                            let select = || {
-                                this.listen(move |screen, _, cx| {
-                                    screen
-                                        .update_image_choice(|choices| choices.selected = index, cx)
-                                })
-                            };
-                            v_flex()
-                                .w(px(116.))
-                                .flex_none()
-                                .gap(px(4.))
-                                .child(
-                                    div()
-                                        .id(("image-board-thumbnail", index))
-                                        .size(px(116.))
-                                        .cursor_pointer()
-                                        .border_as(if selected { T.accent } else { T.border })
-                                        .on_click({
-                                            let select = select();
-                                            move |_, window, cx| select(window, cx)
-                                        })
-                                        .child(img(candidate.thumbnail.clone()).size_full()),
-                                )
-                                .child(
-                                    btn(
-                                        ("image-board-choice", index),
-                                        t("Board {}").replace("{}", &(index + 1).to_string()),
-                                    )
-                                    .compact()
-                                    .selected(selected)
-                                    .on_click(select()),
-                                )
-                        }),
+                btn("rotate-image-position", "Rotate position")
+                    .compact()
+                    .on_click(this.listen(|screen, _, cx| {
+                        screen.update_image_choice(|choices| choices.rotated = !choices.rotated, cx)
+                    })),
+            )
+            .child(
+                h_flex().gap(px(6.)).flex_wrap().children(
+                    [
+                        (Color::White, "White to move"),
+                        (Color::Black, "Black to move"),
+                    ]
+                    .map(|(turn, label)| {
+                        btn(("image-position-turn", usize::from(turn.is_black())), label)
+                            .compact()
+                            .selected(choices.turn == turn)
+                            .on_click(this.listen(move |screen, _, cx| {
+                                screen.update_image_choice(|choices| choices.turn = turn, cx)
+                            }))
+                    }),
                 ),
+            );
+        column
+            .when(!can_open, |column| {
+                column.child(div().text_as(13., T.fg_2).child(t(
+                    "This position needs corrections before it can be opened.",
+                )))
+            })
+            .child(
+                btn("confirm-image-position", action)
+                    .primary()
+                    .on_click(this.listen(move |screen, window, cx| {
+                        screen.open_image_position(position.clone(), window, cx)
+                    })),
             )
     }
 }
@@ -373,35 +393,37 @@ fn import_message(message: &str) -> gpui::Div {
 mod tests {
     use super::*;
 
-    /// Keeps the screenshot's valid and invalid guesses available for selection.
+    /// Allows manual selection even in a screenshot with no automatic detection.
     #[test]
-    fn imports_all_boards_with_their_own_preview_and_position() {
+    fn keeps_the_original_when_no_board_is_found() {
+        let image = image::RgbImage::from_pixel(160, 120, image::Rgb([120; 3]));
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
+        let screenshot = read_screenshot(&ImageInput::Clipboard(gpui::Image::from_bytes(
+            gpui::ImageFormat::Png,
+            bytes.into_inner(),
+        )))
+        .unwrap();
+        assert_eq!(screenshot.pixels.as_ref(), &image);
+        assert!(screenshot.candidates.is_empty());
+    }
+
+    /// Keeps the original image and reports outlines for all of its boards.
+    #[test]
+    fn imports_original_screenshot_and_all_detected_positions() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../services/chessboard_detection/fixtures/screenshots/images/chessboard_detect_0004.png");
-        let candidates = read_candidates(&ImageInput::File(path)).unwrap();
-        assert_eq!(candidates.len(), 3);
-        assert!(
-            candidates
-                .iter()
-                .all(|candidate| candidate.thumbnail.frame_count() == 1)
-        );
-
-        let first = &candidates[0];
-        let position = PositionEditor::from_board(first.oriented_board(false), Color::White)
-            .position()
-            .unwrap();
-        assert_eq!(
-            GameTree::fen_of(&position),
-            "8/4k1p1/8/pr2Nb2/3R2P1/8/5PP1/2K5 w - - 0 1"
-        );
-        assert_eq!(
-            first.oriented_board(true).board_fen().to_string(),
-            "5K2/1PP5/8/1P2R3/2bN2rp/8/1p1k4/8"
-        );
-        let incomplete =
-            PositionEditor::from_board(candidates[1].oriented_board(false), Color::Black);
-        assert!(incomplete.position().is_err());
-        assert_eq!(incomplete.turn, Color::Black);
-        assert_eq!(incomplete.board, candidates[1].board);
+        let screenshot = read_screenshot(&ImageInput::File(path)).unwrap();
+        assert_eq!(screenshot.candidates.len(), 3);
+        let first = &screenshot.candidates[0];
+        assert!(first.outline.start[0] < first.outline.end[0]);
+        assert!(first.outline.start[1] < first.outline.end[1]);
+        let expected = "8/4k1p1/8/pr2Nb2/3R2P1/8/5PP1/2K5";
+        assert_eq!(first.board.board_fen().to_string(), expected);
+        let [left, top, side] =
+            SquareSelection::centered(screenshot.pixels.dimensions(), Some(first.outline))
+                .pixel_bounds(screenshot.pixels.dimensions());
+        let manual = board_image::recognize_selection(&screenshot.pixels, left, top, side).unwrap();
+        assert_eq!(manual.board_fen().to_string(), expected);
     }
 }

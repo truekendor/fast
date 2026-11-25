@@ -69,8 +69,37 @@ pub(crate) fn recognize(image: &RgbImage, scalar: bool) -> anyhow::Result<Vec<Re
         .collect()
 }
 
+/// Recognizes an axis-aligned square chosen by the user without running grid detection.
+pub(crate) fn recognize_selection(
+    image: &RgbImage,
+    left: u32,
+    top: u32,
+    side: u32,
+) -> anyhow::Result<Board> {
+    anyhow::ensure!(
+        side >= 8
+            && side <= image.width().saturating_sub(left)
+            && side <= image.height().saturating_sub(top),
+        "the board selection must be inside the image and at least eight pixels wide"
+    );
+    let intersections = std::array::from_fn(|row| {
+        std::array::from_fn(|column| {
+            [
+                f64::from(left) + f64::from(side) * column as f64 / 8.,
+                f64::from(top) + f64::from(side) * row as f64 / 8.,
+            ]
+        })
+    });
+    let classifier = Classifier::embedded().context("could not load the piece classifier")?;
+    let grid = Grid {
+        intersections,
+        matched_crossings: 0,
+    };
+    Ok(recognize_pieces(&classifier, image, grid)?.board)
+}
+
 /// Crops a region using the same pixel boundaries for previews and inference.
-pub(crate) fn crop(image: &RgbImage, start: [f64; 2], end: [f64; 2]) -> RgbImage {
+fn crop(image: &RgbImage, start: [f64; 2], end: [f64; 2]) -> RgbImage {
     let [left, top] = start.map(|coordinate| coordinate.round() as u32);
     let [right, bottom] = end.map(|coordinate| coordinate.round() as u32);
     image::imageops::crop_imm(image, left, top, right - left, bottom - top).to_image()
