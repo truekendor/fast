@@ -2,6 +2,9 @@
 
 use crate::{LINE_TOLERANCE, MIN_BOARD_SIDE, candidates::Candidate, raster::Raster};
 
+// A narrow crop at the image edge can remove the same fraction of a cell at any resolution.
+const MAX_EDGE_CROP_FRACTION: f64 = 0.10;
+
 /// Holds a fitted grid and the evidence used to resolve overlapping proposals.
 pub(super) struct Fit {
     pub x: f64,
@@ -188,7 +191,13 @@ fn crossing_evidence(
     (continuation <= 0.85 * interior).then_some((crossings, interior - 0.65 * continuation))
 }
 
-/// Refines a candidate and keeps grids large enough to use without clipping the board.
+/// Allows a narrow crop of an outer edge while keeping all internal grid lines visible.
+fn fits_axis_in_image(origin: f64, pitch: f64, extent: usize) -> bool {
+    let tolerance = LINE_TOLERANCE.max(pitch * MAX_EDGE_CROP_FRACTION);
+    origin >= -tolerance && origin + 8.0 * pitch <= extent as f64 + tolerance
+}
+
+/// Refines a candidate and keeps grids within the usable crop tolerance.
 pub(super) fn refine(
     gray: &Raster,
     gx: &Raster,
@@ -199,10 +208,8 @@ pub(super) fn refine(
     let (x, dx) = fit_axis(gx, candidate.x, candidate.y, candidate.pitch, polarity)?;
     let (y, dy) = fit_axis(gy, candidate.y, candidate.x, candidate.pitch, polarity)?;
     if (8.0 * dx.min(dy)).round_ties_even() < MIN_BOARD_SIDE
-        || x.min(y)
-            .min(gray.width as f64 - x - 8.0 * dx)
-            .min(gray.height as f64 - y - 8.0 * dy)
-            < -LINE_TOLERANCE
+        || !fits_axis_in_image(x, dx, gray.width)
+        || !fits_axis_in_image(y, dy, gray.height)
     {
         return None;
     }

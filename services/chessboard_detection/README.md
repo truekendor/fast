@@ -126,6 +126,12 @@ python -B -m services.chessboard_detection.compare_rust target/release/fast.exe 
 
 Rust and Python each find all 14 labelled boards in the occluded fixtures at IoU ≥ 0.95.
 
+`fixtures/screenshots/cropped` contains `regression-rect-crop-x1.webp` (296×294) and
+proportionally enlarged copies with the `-x2` and `-x3` suffixes. The board fills the image, and its fitted top edge lies about 2.5 pixels above the
+original screenshot. A fixed three-pixel tolerance finds the original board and misses both
+larger copies. The Rust detector now allows a crop up to 10% of a square per axis, with a
+two-pixel minimum. The native integration test checks all three images and their grid bounds.
+
 ## Piece recognition
 
 `fast --recognize-board IMAGE OUTPUT.json` classifies the 64 cells of every detected board

@@ -34,6 +34,8 @@ grayscale pixels and has no dependencies. The Python service runs only as a sepa
 experiment and reference benchmark.
 For the crossing filter, the crate selects AVX at runtime on compatible x86-64 CPUs and
 uses the portable scalar code elsewhere. Both implementations are linked into Fast.
+The allowed crop of a fitted outer edge scales with the size of a square and has a two-pixel
+minimum for small boards. The returned grid stays within the screenshot.
 
 `--recognize-board IMAGE OUTPUT.json` runs the same grid detector, crops the RGB cells and
 reuses one CPU classifier for all detected boards. `piece_recognition` embeds the converted
