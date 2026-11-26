@@ -2,7 +2,7 @@
 //! commits in batches, so readers keep working and memory stays flat.
 
 use std::{
-    io::Read,
+    io::{self, Read},
     ops::ControlFlow,
     path::Path,
     sync::{
@@ -11,8 +11,12 @@ use std::{
     },
 };
 
-use chess_core::{Chess, Position, position_hash};
-use pgn_reader::{Nag, RawComment, RawTag, Reader, SanPlus, Skip, Visitor};
+use chess_core::{
+    Chess, Position,
+    pgn::{PgnInput, PgnReadError},
+    position_hash,
+};
+use pgn_reader::{Nag, Outcome, RawComment, RawTag, Reader, SanPlus, Skip, Visitor};
 use rusqlite::{Transaction, params};
 
 use crate::{Database, Result, queries::TimeClass};
@@ -173,6 +177,8 @@ pub(crate) struct Game {
     force_number: bool,
     /// The start of a comment longer than the reader's buffer.
     partial_comment: String,
+    /// Whether a result marker was read at the end of the mainline.
+    complete: bool,
 }
 
 /// The state of one line while reading: the mainline or an open variation.
@@ -312,6 +318,7 @@ impl Visitor for ImportVisitor {
             },
             extras: 0,
             partial_comment: String::new(),
+            complete: false,
         })
     }
 
@@ -468,6 +475,12 @@ impl Visitor for ImportVisitor {
         ControlFlow::Continue(())
     }
 
+    /// Records whether this game can be kept if the source fails during parser lookahead.
+    fn outcome(&mut self, game: &mut Self::Movetext, _: Outcome) -> ControlFlow<Self::Output> {
+        game.complete |= !game.in_variation();
+        ControlFlow::Continue(())
+    }
+
     fn end_game(&mut self, mut game: Self::Movetext) -> Self::Output {
         // Variations left open at the end of the game are closed or dropped.
         while game.in_variation() {
@@ -583,8 +596,33 @@ pub fn import_games(
     reader: impl Read,
     options: &ImportOptions,
     control: &ImportControl,
-    mut on_progress: impl FnMut(ImportProgress),
+    on_progress: impl FnMut(ImportProgress),
 ) -> Result<ImportSummary> {
+    import_games_inner(path, reader, options, control, on_progress, None)
+        .map(|(summary, _)| summary)
+}
+
+/// Imports all readable games and returns a source read error alongside committed results.
+pub fn import_games_prefix(
+    path: &Path,
+    reader: impl Read,
+    options: &ImportOptions,
+    control: &ImportControl,
+    on_progress: impl FnMut(ImportProgress),
+) -> Result<(ImportSummary, Option<io::Error>)> {
+    let (reader, failure) = PgnInput::new(reader);
+    import_games_inner(path, reader, options, control, on_progress, Some(failure))
+}
+
+/// Imports games in batches, committing the final batch on a recoverable source failure.
+fn import_games_inner(
+    path: &Path,
+    reader: impl Read,
+    options: &ImportOptions,
+    control: &ImportControl,
+    mut on_progress: impl FnMut(ImportProgress),
+    failure: Option<PgnReadError>,
+) -> Result<(ImportSummary, Option<io::Error>)> {
     let mut database = Database::open(path)?;
     let mut indexed = database.has_structure_index()?;
     if options.build_structure_index && !indexed {
@@ -602,6 +640,7 @@ pub fn import_games(
     let mut games_with_dropped = Vec::new();
     let mut read = 0u64;
     let mut cancelled = false;
+    let mut parser_error = None;
     'outer: loop {
         let tx = database.conn.transaction()?;
         let mut in_batch = 0;
@@ -611,9 +650,23 @@ pub fn import_games(
                 cancelled = true;
                 break 'outer;
             }
-            let Some(game) = pgn.read_game(&mut visitor)? else {
-                tx.commit()?;
-                break 'outer;
+            let game = match pgn.read_game(&mut visitor) {
+                Ok(Some(game))
+                    if !failure.as_ref().is_some_and(PgnReadError::has_failed)
+                        || game.as_ref().is_none_or(|game| game.complete) =>
+                {
+                    game
+                }
+                Ok(_) => {
+                    tx.commit()?;
+                    break 'outer;
+                }
+                Err(err) if failure.is_some() => {
+                    parser_error = Some(err);
+                    tx.commit()?;
+                    break 'outer;
+                }
+                Err(err) => return Err(err.into()),
             };
             read += 1;
             if let Some(game) = &game
@@ -657,7 +710,7 @@ pub fn import_games(
         on_progress(progress);
     }
     on_progress(progress);
-    Ok(ImportSummary {
+    let summary = ImportSummary {
         games: progress.games,
         skipped: progress.skipped,
         cancelled,
@@ -666,7 +719,11 @@ pub fn import_games(
         games_with_dropped,
         duplicates: progress.duplicates,
         latest_game_ms: progress.latest_game_ms,
-    })
+    };
+    Ok((
+        summary,
+        failure.and_then(|error| error.take()).or(parser_error),
+    ))
 }
 
 struct CountingReader<R> {

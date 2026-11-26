@@ -36,7 +36,7 @@ enum Action {
 
 impl DatabaseScreen {
     /// Prevents collection maintenance while another writer on this screen is running.
-    pub(super) fn collection_busy(&self) -> bool {
+    pub(crate) fn collection_busy(&self) -> bool {
         self.importing.is_some()
             || self.downloading.is_some()
             || self.reviewing.is_some()

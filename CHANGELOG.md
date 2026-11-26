@@ -4,6 +4,14 @@ Settings › Changelog shows this file. Describe the finished changes since each
 
 ## 0.1.4
 
+- Test positions: dropping an EPD during a run explains when another suite can be loaded.
+- Workspace: PGN files with multiple games open as separate collections in Database, and readable games are kept when a file contains an error.
+
+- Analyse: each detected position keeps its own rotation and side to move, and rotating it updates its card.
+- Workspace: save and copy commands apply only when an Analyse tab is visible.
+- Analyse: each detected board in the image preview has a selectable card with a miniature position.
+- Workspace: dropping an image shows the preview before opening a new Analyse tab.
+- Workspace: drop screenshots or chess files from any tab to open them in Analyse.
 - Analyse: image import can find tightly cropped boards at different screenshot resolutions.
 - Analyse and New tab: the unsupported-format warning groups image and chess extensions for easier reading.
 - Analyse and New tab: the drop prompt warns about unsupported formats before you release the file.

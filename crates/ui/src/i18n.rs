@@ -234,25 +234,35 @@ pub fn translate(language: Language, text: &str) -> &str {
             }
             "Drop a screenshot or chess file" => "Screenshot oder Schachdatei hier ablegen",
             "Drop files to import" => "Dateien zum Importieren ablegen",
+            "Drop an .epd file here" => "EPD-Datei hier ablegen",
+            "Test run in progress" => "Test läuft",
+            "Stop the test run or wait for it to finish before loading another suite." => {
+                "Stoppe den Test oder warte, bis er beendet ist, bevor du eine andere Testsuite lädst."
+            }
             "Unsupported file format" => "Dateiformat wird nicht unterstützt",
             "Images" => "Bilder",
             "Chess files" => "Schachdateien",
-            "Screenshots and chess files open in Analyse." => {
-                "Screenshots und Schachdateien werden in der Analyse geöffnet."
+            "PGNs with multiple games open in Database." => {
+                "PGNs mit mehreren Partien werden in der Datenbank geöffnet."
             }
             "Paste game or image" => "Partie oder Bild einfügen",
             "The clipboard is empty." => "Die Zwischenablage ist leer.",
+            "Opened {} games or positions." => "Geöffnete Partien oder Stellungen: {}.",
+            "One import error." => "Ein Importfehler.",
+            "{} import errors." => "{} Importfehler.",
+            "Could not finish reading the PGN." => {
+                "Die PGN-Datei konnte nicht vollständig gelesen werden."
+            }
             "Some images could not be read." => "Einige Bilder konnten nicht gelesen werden.",
             "No chessboards found in this image." => {
                 "In diesem Bild wurden keine Schachbretter gefunden."
             }
             "Original screenshot" => "Originalbild",
             "Image {} of {}" => "Bild {} von {}",
-            "Board {} of {}" => "Brett {} von {}",
+            "Board {}" => "Brett {}",
+            "Detected boards" => "Erkannte Bretter",
             "Previous image" => "Vorheriges Bild",
             "Next image" => "Nächstes Bild",
-            "Previous board" => "Vorheriges Brett",
-            "Next board" => "Nächstes Brett",
             "Select area manually" => "Bereich manuell wählen",
             "Use automatic detection" => "Automatische Erkennung verwenden",
             "Recognize selected area" => "Gewählten Bereich erkennen",
@@ -1254,6 +1264,7 @@ pub fn translate(language: Language, text: &str) -> &str {
                 "{} Partien importiert, {} mit Anmerkungen."
             }
             "{} games skipped." => "{} Partien übersprungen.",
+            "One game skipped." => "Eine Partie übersprungen.",
             "{} variations had illegal moves and were left out." => {
                 "{} Varianten enthielten unzulässige Züge und wurden ausgelassen."
             }

@@ -164,6 +164,18 @@ impl Workspace {
             self.set_mode(mode, cx);
             return;
         }
+        let (id, path) = self.reserve_tab(mode, cx);
+        let tab = self.make_tab(mode, id, path, window, cx);
+        self.tabs.push(tab);
+        self.activate_tab(id, cx);
+    }
+
+    /// Allocates the identity and recovery location for a new tab.
+    pub(super) fn reserve_tab(
+        &mut self,
+        mode: Mode,
+        cx: &mut Context<Self>,
+    ) -> (u64, Option<std::path::PathBuf>) {
         let id = self.next_tab_id;
         self.next_tab_id += 1;
         let recovery_id = self.next_recovery_id.max(id);
@@ -174,9 +186,7 @@ impl Workspace {
             Mode::Play => Some(directory.join(format!("play-{recovery_id}.json"))),
             _ => None,
         };
-        let tab = self.make_tab(mode, id, path, window, cx);
-        self.tabs.push(tab);
-        self.activate_tab(id, cx);
+        (id, path)
     }
 
     pub fn open_analysis(

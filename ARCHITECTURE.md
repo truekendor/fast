@@ -44,12 +44,17 @@ the piece-placement field of FEN in both orientations.
 Analyse calls the same Rust image service on a background task, then outlines the detected
 boards on the original screenshot beside the position preview. A manual square can supply
 the 8×8 cell boundaries to the same classifier when automatic detection misses a board. A guess
-that needs correction can be sent to the position editor. The workspace routes dropped files
-and native clipboard entries from Analyse and the new-tab picker to that same preview or to
-the existing chess parsers. Dropping on an Analyse tab header activates that tab first.
-Dropping on New tab uses the picker's import flow, which reserves an Analyse tab for a
-screenshot so confirming the position fills that tab. The drop prompt checks extensions before
-the drop. The workspace reads screenshots and notation files on background tasks.
+that needs correction can be sent to the position editor. The workspace routes file drops
+from every screen to that preview or to the existing chess parsers. The workspace owns the
+image preview so it can appear over any tab and opens an Analyse position only when confirmed.
+A single EPD dropped on Test positions opens as a test suite once any active run has finished.
+During a run, the drop prompt and drop action both explain why the suite is locked.
+Analyse and the new-tab picker also accept native clipboard entries. The drop prompt checks extensions before the
+drop. The workspace reads screenshots on background tasks. For file picker, drop and
+file clipboard imports, it probes PGN and PGN.gz files for a second game on a worker.
+Multi-game files stream into new SQLite collections, publishing any readable games even
+if the source later fails. Other notation results cross a bounded channel, with recovery
+snapshots written off the UI thread before Analyse tabs open in short slices.
 
 ## Release packaging
 

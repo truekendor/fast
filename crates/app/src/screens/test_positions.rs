@@ -14,7 +14,7 @@ use std::{
 use chess_core::{EpdLine, EpdPosition};
 use engine::EngineId;
 use gpui::{
-    Context, Div, Entity, ExternalPaths, FontWeight, IntoElement, Render, SharedString, Task,
+    Context, Div, Entity, FontWeight, IntoElement, Render, SharedString, Task,
     UniformListScrollHandle, WeakEntity, Window, div, prelude::*, px, rgb, uniform_list,
 };
 use gpui_component::input::InputState;
@@ -29,7 +29,7 @@ use ui::{
 use crate::{
     config::{TestGoal, TestLimitKind, TestPositionSettings},
     controls::{choice, field, new_input, text_input, toggle},
-    model::{AppModel, pick_directory, pick_path},
+    model::{AppModel, ToastExt as _, pick_directory, pick_path},
     shell::Workspace,
     test_suite::{self, Cell, RunEvent, RunSettings, Search},
 };
@@ -38,6 +38,10 @@ use self::form::limit_text;
 
 mod form;
 mod results;
+
+/// Explains why an EPD cannot replace the suite an engine is currently testing.
+pub(crate) const SUITE_RUN_IN_PROGRESS: &str =
+    "Stop the test run or wait for it to finish before loading another suite.";
 
 const ROW_H: f32 = 34.;
 const W_LINE: f32 = 52.;
@@ -100,7 +104,7 @@ pub struct TestPositionsScreen {
 impl TestPositionsScreen {
     /// Engines are working through the suite.
     pub fn is_running(&self) -> bool {
-        self.run.as_ref().is_some_and(|run| run.finished.is_none())
+        self.run.as_ref().is_some_and(Run::active)
     }
 
     pub fn new(
@@ -182,10 +186,6 @@ impl TestPositionsScreen {
         }
     }
 
-    fn running(&self) -> bool {
-        self.run.as_ref().is_some_and(Run::active)
-    }
-
     /// Why a line is skipped for the chosen goal, if it is.
     fn problem(&self, line: &EpdLine) -> Option<SharedString> {
         match &line.parsed {
@@ -204,7 +204,7 @@ impl TestPositionsScreen {
     }
 
     fn start(&mut self, cx: &mut Context<Self>) {
-        if self.running() {
+        if self.is_running() {
             return;
         }
         if let Err(err) = self.read_form(cx) {
@@ -297,7 +297,7 @@ impl TestPositionsScreen {
                 let active = this
                     .update(cx, |screen, cx| {
                         cx.notify();
-                        screen.running()
+                        screen.is_running()
                     })
                     .unwrap_or(false);
                 if !active {

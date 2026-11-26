@@ -2,7 +2,7 @@
 
 use std::cell::Cell;
 
-use gpui::{CursorStyle, DragMoveEvent, Empty, KeyDownEvent, img, point};
+use gpui::{CursorStyle, Div, DragMoveEvent, Empty, KeyDownEvent, img, point};
 
 use super::*;
 
@@ -26,13 +26,6 @@ pub(super) struct SquareSelection {
 enum Handle {
     Center,
     Corner { x: f64, y: f64 },
-}
-
-/// What the navigation buttons select within the import dialog.
-#[derive(Clone, Copy)]
-enum Choice {
-    Screenshot,
-    Board,
 }
 
 /// The initial square and pointer position for a drag gesture.
@@ -125,23 +118,26 @@ fn drag_selection(
     )
 }
 
-impl AnalyseScreen {
+impl ImageImportDialog {
     /// Shows the original screenshot and selection controls on the left of the preview.
     pub(super) fn render_screenshot(
         &self,
         choices: &BoardChoices,
         width: f32,
-        viewport_height: Pixels,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
         let this = cx.entity();
         let source = choices.screenshot();
         let (w, h) = source.pixels.dimensions();
-        let height = (f32::from(viewport_height) - 205.).clamp(220., 490.);
+        let manual = choices.manual.as_ref();
+        let show_cards = manual.is_none() && !choices.thumbnails.is_empty();
+        let cards_height = if show_cards { 148. } else { 0. };
+        let height =
+            (f32::from(window.viewport_size().height) - 205. - cards_height).clamp(220., 490.);
         let scale = f64::from(width / w as f32).min(f64::from(height / h as f32));
         let draw = |value: f64| px((value * scale) as f32);
         let can_select_manually = w >= 8 && h >= 8;
-        let manual = choices.manual.as_ref();
         let screenshot = div()
             .id("original-board-image")
             .relative()
@@ -173,7 +169,8 @@ impl AnalyseScreen {
             .when(manual.is_none(), |image| {
                 image.children(source.candidates.iter().enumerate().map(|(index, board)| {
                     let rect = board.outline;
-                    let active = choices.selected == index;
+                    let selected = choices.selected == index;
+                    let outline_color = if selected { T.accent } else { T.fg_2 };
                     div()
                         .id(("detected-board-outline", index))
                         .absolute()
@@ -181,9 +178,9 @@ impl AnalyseScreen {
                         .top(draw(rect.start[1]))
                         .w(draw(rect.end[0] - rect.start[0]))
                         .h(draw(rect.end[1] - rect.start[1]))
-                        .bg(rgb(T.accent).alpha(if active { 0.24 } else { 0.14 }))
-                        .border(if active { px(3.) } else { px(2.) })
-                        .border_color(rgb(if active { T.accent } else { T.fg }))
+                        .border(if selected { px(3.) } else { px(2.) })
+                        .border_color(rgb(outline_color))
+                        .when(selected, |outline| outline.bg(rgb(T.accent).alpha(0.24)))
                         .hover(|style| style.border_color(rgb(T.accent_hover)))
                         .cursor_pointer()
                         .on_click(cx.listener(move |screen, _, _, cx| {
@@ -204,12 +201,7 @@ impl AnalyseScreen {
                     .child(section_label("Original screenshot"))
                     .when(choices.sources.len() > 1, |row| {
                         let count = choices.sources.len();
-                        row.child(self.image_choice_nav(
-                            Choice::Screenshot,
-                            choices.source,
-                            count,
-                            cx,
-                        ))
+                        row.child(self.image_source_nav(choices.source, count, cx))
                     }),
             )
             .child(
@@ -257,16 +249,11 @@ impl AnalyseScreen {
                                 this.listen(|screen, _, cx| screen.recognize_image_selection(cx)),
                             ),
                         )
-                    })
-                    .when(manual.is_none() && source.candidates.len() > 1, |row| {
-                        row.child(self.image_choice_nav(
-                            Choice::Board,
-                            choices.selected,
-                            source.candidates.len(),
-                            cx,
-                        ))
                     }),
             )
+            .when(show_cards, |column| {
+                column.child(self.detected_board_cards(choices, window, cx))
+            })
             .when(manual.is_none() && source.candidates.is_empty(), |column| {
                 column.child(
                     div()
@@ -284,31 +271,71 @@ impl AnalyseScreen {
             })
     }
 
-    /// Lets the user browse images or detected boards using keyboard-accessible buttons.
-    fn image_choice_nav(
+    /// Gives every detected position a card that selects it in the preview.
+    fn detected_board_cards(
         &self,
-        choice: Choice,
-        index: usize,
-        count: usize,
+        choices: &BoardChoices,
+        window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> gpui::Div {
-        let (kind, label, previous, following) = match choice {
-            Choice::Screenshot => (
-                "source-image",
-                "Image {} of {}",
-                "Previous image",
-                "Next image",
-            ),
-            Choice::Board => (
-                "detected-board",
-                "Board {} of {}",
-                "Previous board",
-                "Next board",
-            ),
-        };
+    ) -> Div {
+        v_flex()
+            .gap(px(6.))
+            .child(section_label("Detected boards"))
+            .child(h_flex().flex_wrap().gap(px(8.)).children(
+                choices.thumbnails.iter().enumerate().map(|(index, board)| {
+                    let id = ("detected-board-card", index);
+                    let focus = window
+                        .use_keyed_state(id, cx, |_, cx| cx.focus_handle().tab_stop(true))
+                        .read(cx)
+                        .clone();
+                    let selected = index == choices.selected;
+                    let label = ui::i18n::tf("Board {}", &[&(index + 1).to_string()]);
+                    ui::widgets::panel()
+                        .id(id)
+                        .key_context("FastButton")
+                        .track_focus(&focus)
+                        .role(gpui::Role::Button)
+                        .aria_label(label.clone())
+                        .aria_toggled(if selected {
+                            gpui::Toggled::True
+                        } else {
+                            gpui::Toggled::False
+                        })
+                        .flex()
+                        .flex_col()
+                        .flex_none()
+                        .items_center()
+                        .gap(px(4.))
+                        .p(px(6.))
+                        .cursor_pointer()
+                        .hover(|style| style.bg(rgb(T.hover)))
+                        .when(selected, |card| {
+                            card.bg(rgb(T.selected)).border_color(rgb(T.accent))
+                        })
+                        .focus_visible(|style| style.border_2().border_color(rgb(T.accent)))
+                        .child(div().size(px(88.)).flex_none().child(board.clone()))
+                        .child(div().text_as(13., T.fg).child(label))
+                        .on_click(cx.listener(move |dialog, _, _, cx| {
+                            dialog.update_image_choice(|choices| choices.selected = index, cx);
+                        }))
+                        .on_key_down(cx.listener(move |dialog, event: &KeyDownEvent, _, cx| {
+                            let is_activation_key =
+                                matches!(event.keystroke.key.as_str(), "enter" | "space")
+                                    && !event.keystroke.modifiers.modified();
+                            if is_activation_key {
+                                dialog.update_image_choice(|choices| choices.selected = index, cx);
+                                cx.stop_propagation();
+                            }
+                        }))
+                }),
+            ))
+    }
+
+    /// Lets the user browse screenshots using keyboard-accessible buttons.
+    fn image_source_nav(&self, index: usize, count: usize, cx: &mut Context<Self>) -> gpui::Div {
         let this = cx.entity();
         let next = |forward, icon, tip, disabled| {
-            icon_btn((kind, usize::from(forward)), icon)
+            icon_btn(("source-image", usize::from(forward)), icon)
                 .compact()
                 .w(28.)
                 .pad(0.)
@@ -320,34 +347,29 @@ impl AnalyseScreen {
                     } else {
                         index.saturating_sub(1)
                     };
-                    screen.update_image_choice(
-                        |choices| match choice {
-                            Choice::Screenshot => {
-                                choices.source = next;
-                                choices.selected = 0;
-                                choices.manual = None;
-                                choices.rotated = false;
-                            }
-                            Choice::Board => choices.selected = next,
-                        },
-                        cx,
-                    );
+                    if let Some(ImageImport::Ready(choices)) = &mut screen.image_import {
+                        choices.select_screenshot(next, cx);
+                        choices.update_preview(cx);
+                        cx.notify();
+                    }
                 }))
         };
         h_flex()
             .gap(px(6.))
-            .child(next(false, "icons/chevron-left.svg", previous, index == 0))
-            .child(
-                div().text_as(13., T.fg_2).child(
-                    t(label)
-                        .replacen("{}", &(index + 1).to_string(), 1)
-                        .replace("{}", &count.to_string()),
-                ),
-            )
+            .child(next(
+                false,
+                "icons/chevron-left.svg",
+                "Previous image",
+                index == 0,
+            ))
+            .child(div().text_as(13., T.fg_2).child(ui::i18n::tf(
+                "Image {} of {}",
+                &[&(index + 1).to_string(), &count.to_string()],
+            )))
             .child(next(
                 true,
                 "icons/chevron-right.svg",
-                following,
+                "Next image",
                 index + 1 == count,
             ))
     }
@@ -363,19 +385,16 @@ impl AnalyseScreen {
             if w < 8 || h < 8 {
                 return;
             }
-            let square = SquareSelection::centered(
-                (w, h),
-                source
-                    .candidates
-                    .get(choices.selected)
-                    .map(|board| board.outline),
-            );
+            let candidate = source.candidates.get(choices.selected);
+            let square = SquareSelection::centered((w, h), candidate.map(|board| board.outline));
+            let options = candidate.map(|board| board.options).unwrap_or_default();
             let focus = cx.focus_handle().tab_stop(true);
             focus.focus(window, cx);
             choices.manual = Some(ManualSelection {
                 square,
                 focus,
                 result: None,
+                options,
                 task: None,
                 failed: false,
             });

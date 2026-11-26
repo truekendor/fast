@@ -2,6 +2,16 @@
 
 A standalone product backlog for the native, offline chess workstation. Priorities reflect study correctness and daily usefulness. Completed roadmap work is removed; remaining entries are proposals.
 
+## Image import audit
+
+- [x] Require an open, visible Analyse tab before saving or copying a game.
+- [x] Keep rotation and side to move independent for every detected position, and update its card when it rotates.
+- [x] Import multi-game PGNs into Database and keep readable games when the file contains an error.
+- [x] Explain why an EPD suite cannot be loaded while Test positions is running. Use the same rules for the drop prompt and the drop action.
+- [ ] Reuse the piece classifier across images and manual selections. Show the first results while the rest of the batch is processing.
+- [ ] Verify file clipboard support on Windows, macOS, Wayland and X11. Document file pasting, image pasting and drag-and-drop separately.
+- [ ] Document how to reproduce the pinned ONNX export and record the licenses for both sets of weights.
+
 ## First: improve the daily workspace
 
 1. **Change — extend workspace restoration and recent games.** Tabs, names, the active tab, recovered games and opening-tree database choices already restore across restarts. Extend restoration to selected positions and saved engine selections, with an explicit preference controlling whether computation restarts. Keep recent games easy to find.

@@ -3,14 +3,13 @@
 use super::*;
 
 impl Workspace {
-    /// Runs an Analyse-only shortcut, ignored on other screens where its effect
-    /// would be invisible.
+    /// Runs a shortcut only when an Analyse tab is open and visible.
     pub(super) fn in_analyse(
         &mut self,
         cx: &mut Context<Self>,
         action: impl FnOnce(&mut AnalyseScreen, &mut Context<AnalyseScreen>),
     ) {
-        if self.mode == Mode::Analyse {
+        if self.mode == Mode::Analyse && !self.tabs.is_empty() && !self.new_tab_menu_open {
             self.analyse.update(cx, action);
         }
     }

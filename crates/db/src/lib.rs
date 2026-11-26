@@ -8,7 +8,9 @@ mod queries;
 mod structure;
 
 pub use edit::GameInfo;
-pub use import::{ImportControl, ImportOptions, ImportProgress, ImportSummary, import_games};
+pub use import::{
+    ImportControl, ImportOptions, ImportProgress, ImportSummary, import_games, import_games_prefix,
+};
 pub use management::DatabaseStats;
 pub use notes::NoteStore;
 pub use queries::{

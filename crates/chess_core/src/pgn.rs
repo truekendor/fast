@@ -1,4 +1,9 @@
-use std::ops::ControlFlow;
+use std::{
+    cell::RefCell,
+    io::{self, Read},
+    ops::ControlFlow,
+    rc::Rc,
+};
 
 use pgn_reader::{Nag, Outcome, RawComment, RawTag, Reader, SanPlus, Skip, Visitor};
 use shakmaty::Position;
@@ -22,6 +27,7 @@ pub enum PgnError {
 
 struct TreeVisitor {
     game: usize,
+    finished: bool,
 }
 
 struct Movetext {
@@ -37,6 +43,7 @@ impl Visitor for TreeVisitor {
 
     fn begin_tags(&mut self) -> ControlFlow<Self::Output, Self::Tags> {
         self.game += 1;
+        self.finished = false;
         ControlFlow::Continue(Vec::new())
     }
 
@@ -164,6 +171,7 @@ impl Visitor for TreeVisitor {
         movetext: &mut Self::Movetext,
         outcome: Outcome,
     ) -> ControlFlow<Self::Output> {
+        self.finished |= movetext.stack.is_empty();
         if movetext.tree.header("Result").is_none() {
             movetext.tree.set_header("Result", &outcome.to_string());
         }
@@ -177,13 +185,91 @@ impl Visitor for TreeVisitor {
 
 /// Parses every game of a PGN document into trees (including variations).
 pub fn parse_pgn(text: &str) -> Result<Vec<GameTree>, PgnError> {
-    let mut reader = Reader::new(std::io::Cursor::new(text));
-    let mut visitor = TreeVisitor { game: 0 };
-    let mut games = Vec::new();
-    while let Some(game) = reader.read_game(&mut visitor)? {
-        games.push(game?);
+    read_pgn_games(text.as_bytes()).collect()
+}
+
+/// Reads one game at a time, skipping a rejected game when the reader can find the next one.
+/// A stream error ends iteration after it has been reported.
+pub fn read_pgn_games(input: impl Read) -> impl Iterator<Item = Result<GameTree, PgnError>> {
+    let (input, failure) = PgnInput::new(input);
+    let mut reader = Reader::new(input);
+    let mut visitor = TreeVisitor {
+        game: 0,
+        finished: false,
+    };
+    let mut stopped = false;
+    std::iter::from_fn(move || {
+        if stopped {
+            return None;
+        }
+        match reader.read_game(&mut visitor) {
+            Ok(Some(game)) if game.is_err() || visitor.finished || !failure.has_failed() => {
+                Some(game)
+            }
+            Ok(_) => {
+                stopped = true;
+                failure.take().map(|err| Err(err.into()))
+            }
+            Err(err) => {
+                stopped = true;
+                Some(Err(err.into()))
+            }
+        }
+    })
+}
+
+/// Lets the parser finish games buffered before a read error interrupted its lookahead.
+pub struct PgnInput<R> {
+    input: R,
+    failure: PgnReadError,
+}
+
+/// A deferred source error that can be reported after the buffered games.
+#[derive(Clone, Default)]
+pub struct PgnReadError(Rc<RefCell<Option<io::Error>>>);
+
+impl PgnReadError {
+    /// Tells callers when a game without a result may be truncated.
+    pub fn has_failed(&self) -> bool {
+        self.0.borrow().is_some()
     }
-    Ok(games)
+
+    /// Takes the source error after reading has ended.
+    pub fn take(&self) -> Option<io::Error> {
+        self.0.borrow_mut().take()
+    }
+}
+
+impl<R> PgnInput<R> {
+    /// Adapts a PGN source so lookahead errors do not discard completed games.
+    pub fn new(input: R) -> (Self, PgnReadError) {
+        let failure = PgnReadError::default();
+        (
+            Self {
+                input,
+                failure: failure.clone(),
+            },
+            failure,
+        )
+    }
+}
+
+impl<R: Read> Read for PgnInput<R> {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        if self.failure.has_failed() {
+            return Ok(0);
+        }
+        loop {
+            match self.input.read(out) {
+                Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                Err(err) => {
+                    *self.failure.0.borrow_mut() = Some(err);
+                    return Ok(0);
+                }
+                read => return read,
+            }
+        }
+    }
 }
 
 fn write_moves(tree: &GameTree, start: NodeId, out: &mut Vec<String>, mut force_number: bool) {

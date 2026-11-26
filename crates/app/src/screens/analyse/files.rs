@@ -2,8 +2,6 @@
 
 use super::*;
 
-use crate::analysis_import::read_game_files;
-
 impl AnalyseScreen {
     pub fn load_tree(&mut self, tree: GameTree, window: &mut Window, cx: &mut Context<Self>) {
         self.tree = tree;
@@ -37,42 +35,6 @@ impl AnalyseScreen {
             }
         }
         self.position_changed(false, window, cx);
-    }
-
-    /// Opens multiple PGN/FEN files, with each game in its own board tab.
-    pub fn open_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let this = cx.entity().downgrade();
-        let workspace = self.workspace.clone();
-        let target_window = window.window_handle();
-        crate::model::pick_paths(self.model.clone(), "Open games", cx, move |paths, cx| {
-            let read = cx
-                .background_executor()
-                .spawn(async move { read_game_files(&paths) });
-            cx.spawn(async move |cx| {
-                let (games, errors) = read.await;
-                let _ = target_window.update(cx, |_, window, cx| {
-                    let mut games = games.into_iter();
-                    if let Some(first) = games.next()
-                        && let Some(this) = this.upgrade()
-                    {
-                        this.update(cx, |screen, cx| screen.load_tree(first, window, cx));
-                    }
-                    if let Some(workspace) = workspace.upgrade() {
-                        workspace.update(cx, |workspace, cx| {
-                            for tree in games {
-                                workspace.open_analysis(tree, window, cx);
-                            }
-                        });
-                    }
-                    if !errors.is_empty()
-                        && let Some(this) = this.upgrade()
-                    {
-                        this.update(cx, |screen, cx| screen.model.toast(errors.join("; "), cx));
-                    }
-                });
-            })
-            .detach();
-        });
     }
 
     /// Loads text that is either a FEN or PGN, e.g. from a file or the clipboard.
@@ -435,37 +397,5 @@ impl AnalyseScreen {
             });
         })
         .detach();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn opening_multiple_files_keeps_every_game_and_reports_individual_failures() {
-        let dir = tempfile::tempdir().unwrap();
-        let first = dir.path().join("two games.pgn");
-        let second = dir.path().join("another.pgn");
-        let fen = dir.path().join("position.fen");
-        std::fs::write(
-            &first,
-            "[Event \"One\"]\n\n1. e4 *\n\n[Event \"Two\"]\n\n1. d4 *",
-        )
-        .unwrap();
-        std::fs::write(&second, "[Event \"Three\"]\n\n1. c4 *").unwrap();
-        std::fs::write(&fen, GameTree::new().fen(GameTree::ROOT)).unwrap();
-        let (games, errors) =
-            read_game_files(&[first, dir.path().join("missing.pgn"), second, fen]);
-        assert_eq!(games.len(), 4);
-        assert_eq!(games[0].header("Event"), Some("One"));
-        assert_eq!(games[1].header("Event"), Some("Two"));
-        assert_eq!(games[2].header("Event"), Some("Three"));
-        assert_eq!(games[0].node(games[0].mainline()[0]).san, "e4");
-        assert_eq!(games[1].node(games[1].mainline()[0]).san, "d4");
-        assert_eq!(games[2].node(games[2].mainline()[0]).san, "c4");
-        assert!(games[3].mainline().is_empty());
-        assert_eq!(errors.len(), 1);
-        assert!(errors[0].contains("missing.pgn"));
     }
 }

@@ -20,7 +20,7 @@ use ui::{
 use crate::{
     model::AppModel,
     screens::{
-        analyse::AnalyseScreen,
+        analyse::{AnalyseScreen, ImageImportDialog},
         database::DatabaseScreen,
         play::PlayScreen,
         settings::{SettingsPage, SettingsScreen},
@@ -287,6 +287,7 @@ pub struct Workspace {
     pub model: Entity<AppModel>,
     pub mode: Mode,
     pub analyse: Entity<AnalyseScreen>,
+    image_import: Entity<ImageImportDialog>,
     pub database: Entity<DatabaseScreen>,
     pub train: Entity<TrainScreen>,
     pub play: Entity<PlayScreen>,
@@ -368,6 +369,7 @@ impl Workspace {
         model.update(cx, |model, cx| model.refresh_leaks(cx));
         let this = cx.entity().downgrade();
         let analyse = cx.new(|cx| AnalyseScreen::new(model.clone(), this.clone(), window, cx));
+        let image_import = cx.new(|_| ImageImportDialog::new(model.clone(), this.clone()));
         let database = cx.new(|cx| DatabaseScreen::new(model.clone(), this.clone(), window, cx));
         let train = cx.new(|cx| TrainScreen::new(model.clone(), this.clone(), window, cx));
         let play = cx.new(|cx| PlayScreen::new(model.clone(), this.clone(), window, cx));
@@ -472,6 +474,7 @@ impl Workspace {
             model,
             mode,
             analyse,
+            image_import,
             database,
             train,
             play,
@@ -696,22 +699,19 @@ impl Render for Workspace {
                             .min_h_0()
                             .w_full()
                             .child(body)
-                            .when(
-                                self.mode == Mode::Analyse && !self.new_tab_menu_open,
-                                |area| {
-                                    area.on_drop(cx.listener(
-                                        |workspace, files: &gpui::ExternalPaths, window, cx| {
-                                            workspace.drop_analysis_files(
-                                                files,
-                                                imports::FileDropTarget::Analyse,
-                                                window,
-                                                cx,
-                                            );
-                                        },
-                                    ))
-                                    .child(imports::file_drop_overlay())
-                                },
-                            )
+                            .when(!self.new_tab_menu_open, |area| {
+                                area.on_drop(cx.listener(
+                                    |workspace, files: &gpui::ExternalPaths, window, cx| {
+                                        workspace.drop_analysis_files(
+                                            files,
+                                            imports::FileDropTarget::Workspace,
+                                            window,
+                                            cx,
+                                        );
+                                    },
+                                ))
+                                .child(imports::file_drop_overlay(self.visible_test_positions()))
+                            })
                             .when(self.new_tab_menu_open, |area| {
                                 area.child(self.new_tab_picker(cx))
                             }),
@@ -757,6 +757,7 @@ impl Render for Workspace {
                 }
             }))
             .child(self.toasts(cx))
+            .child(deferred(self.image_import.clone()).with_priority(3))
             .when(client_drawn && !window.is_maximized(), |root| {
                 root.children(resize_handles())
             });
@@ -846,7 +847,7 @@ impl Workspace {
             this.update_search(cx);
         }))
         .on_action(cx.listener(|this, _: &SaveGame, _, cx| {
-            this.analyse.update(cx, |screen, cx| screen.save_game(cx));
+            this.in_analyse(cx, AnalyseScreen::save_game);
         }))
         .on_action(cx.listener(|this, _: &NewGame, window, cx| {
             this.new_tab(Mode::Analyse, window, cx);
@@ -875,29 +876,24 @@ impl Workspace {
         .on_action(cx.listener(|this, _: &TabBack, _, cx| this.step_history(true, cx)))
         .on_action(cx.listener(|this, _: &TabForward, _, cx| this.step_history(false, cx)))
         .on_action(cx.listener(|this, _: &OpenGame, window, cx| {
-            this.new_tab(Mode::Analyse, window, cx);
-            this.analyse
-                .update(cx, |screen, cx| screen.open_file(window, cx));
-            this.set_mode(Mode::Analyse, cx);
+            this.open_game_files(window, cx);
         }))
         .on_action(cx.listener(|this, _: &ImportPositionImage, _, cx| {
-            this.set_mode(Mode::Analyse, cx);
-            this.analyse
-                .update(cx, |screen, cx| screen.import_image(cx));
+            let edit_tab = this.image_edit_target();
+            this.image_import
+                .update(cx, |dialog, cx| dialog.import_image(edit_tab, cx));
         }))
         .on_action(cx.listener(|this, _: &SavePgnAs, _, cx| {
-            this.analyse.update(cx, |screen, cx| screen.save_pgn_as(cx));
+            this.in_analyse(cx, AnalyseScreen::save_pgn_as);
         }))
         .on_action(cx.listener(|this, _: &PasteGame, window, cx| {
             this.paste_analysis(window, cx);
         }))
         .on_action(cx.listener(|this, _: &CopyFen, _, cx| {
-            this.analyse
-                .update(cx, |screen, cx| screen.copy_fen_action(cx));
+            this.in_analyse(cx, AnalyseScreen::copy_fen_action);
         }))
         .on_action(cx.listener(|this, _: &CopyPgn, _, cx| {
-            this.analyse
-                .update(cx, |screen, cx| screen.copy_pgn_action(cx));
+            this.in_analyse(cx, AnalyseScreen::copy_pgn_action);
         }))
     }
 

@@ -12,7 +12,10 @@ pub(super) fn import_message(summary: &db::ImportSummary) -> String {
             &format_count(summary.annotated),
         ],
     );
-    if summary.skipped > 0 {
+    if summary.skipped == 1 {
+        message.push(' ');
+        message.push_str(ui::i18n::t("One game skipped."));
+    } else if summary.skipped > 1 {
         message.push(' ');
         message.push_str(&ui::i18n::tf(
             "{} games skipped.",
@@ -38,6 +41,91 @@ fn import_label(text: &str) -> gpui::Div {
 }
 
 impl DatabaseScreen {
+    /// Imports each workspace PGN collection into a separate database and shows the result.
+    pub(crate) fn import_collections(
+        &mut self,
+        files: Vec<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::database_sources::{install_workspace_pgn, pgn_collection_name};
+
+        let model = self.model.read(cx);
+        let directory = model.paths.databases_dir();
+        let options = ImportOptions {
+            keep_annotations: model.config.import_keep_annotations,
+            build_structure_index: model.config.import_structure_index,
+            ..Default::default()
+        };
+        let control = ImportControl::default();
+        self.collection_control = Some(control.clone());
+        self.collection_progress = ui::i18n::t("Preparing database…").to_owned();
+        let (send, receive) = smol::channel::bounded(1);
+        let worker = cx.background_spawn(async move {
+            let mut results = Vec::new();
+            for file in files {
+                if control.is_cancelled() {
+                    break;
+                }
+                let name = pgn_collection_name(&file);
+                let outcome =
+                    install_workspace_pgn(&directory, &file, &options, &control, |progress| {
+                        let message =
+                            ui::i18n::tf("Imported {} games", &[&format_count(progress.games)]);
+                        let _ = send.try_send(format!("{name}  {message}"));
+                    });
+                results.push((name, outcome));
+            }
+            results
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            while let Ok(progress) = receive.recv().await {
+                if this
+                    .update(cx, |screen, cx| {
+                        screen.collection_progress = progress;
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+            let results = worker.await;
+            let _ = this.update_in(cx, |screen, window, cx| {
+                screen.collection_control = None;
+                let mut last = None;
+                for (name, result) in results {
+                    let message = match result {
+                        Ok(collection) => {
+                            last = Some(collection.path);
+                            let mut message = import_message(&collection.summary);
+                            if let Some(error) = collection.read_error {
+                                message.push_str(&format!(
+                                    "\n{} {error}",
+                                    ui::i18n::t("Could not finish reading the PGN.")
+                                ));
+                            }
+                            message
+                        }
+                        Err(err) => ui::i18n::t(&err.to_string()).to_owned(),
+                    };
+                    screen.model.toast(format!("{name}\n{message}"), cx);
+                }
+                if let Some(path) = last {
+                    screen.selected_db = Some(path);
+                    screen.selected = None;
+                    screen
+                        .model
+                        .update(cx, |model, cx| model.refresh_databases(cx));
+                    screen.clear_filters(window, cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
     /// Opens the Import dialog, unless an import is already running.
     pub fn prompt_import(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.importing.is_some() {

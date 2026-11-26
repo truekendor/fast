@@ -115,6 +115,7 @@ mod status_bar;
 mod tree_edit;
 
 use editor::PositionEditor;
+pub(crate) use image_import::ImageImportDialog;
 use panels::{LOG_POLL, LogSelection, PvView};
 use sheet_tabs::SheetTab;
 
@@ -192,7 +193,6 @@ pub struct AnalyseScreen {
     limit_controls: Entity<panels::limit::SearchLimitControls>,
     /// Edit position is open, with the position being set up.
     editor: Option<PositionEditor>,
-    image_import: Option<image_import::ImageImport>,
     context_menu: Option<(NodeId, Point<Pixels>)>,
     /// The board toolbar's copy menu is open.
     copy_menu: bool,
@@ -293,6 +293,40 @@ impl AnalyseScreen {
         window: &mut Window,
         cx: &mut Context<Self>,
         recovery_path: std::path::PathBuf,
+    ) -> Self {
+        Self::create(model, workspace, window, cx, recovery_path, None)
+    }
+
+    /// Opens an imported tree whose recovery file was prepared off the UI thread.
+    pub(crate) fn new_imported(
+        model: Entity<AppModel>,
+        workspace: WeakEntity<Workspace>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        recovery_path: std::path::PathBuf,
+        tree: GameTree,
+        recovery_pgn: String,
+    ) -> Self {
+        let mut screen = Self::create(
+            model,
+            workspace,
+            window,
+            cx,
+            recovery_path,
+            Some(recovery_pgn),
+        );
+        screen.load_tree(tree, window, cx);
+        screen
+    }
+
+    /// Sets up a screen, reading a saved game only when no imported snapshot was supplied.
+    fn create(
+        model: Entity<AppModel>,
+        workspace: WeakEntity<Workspace>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        recovery_path: std::path::PathBuf,
+        recovery_pgn: Option<String>,
     ) -> Self {
         let board = cx.new(|_| BoardView::new("analyse-board"));
         let live = cx.new(|cx| LiveAnalysis::new(model.clone(), cx));
@@ -400,9 +434,13 @@ impl AnalyseScreen {
             board.set_flipped(flipped, cx);
         });
         let mut this = Self {
-            recovery: crate::recovery::Recovery::load(&recovery_path),
+            recovery: if recovery_pgn.is_none() {
+                crate::recovery::Recovery::load(&recovery_path)
+            } else {
+                None
+            },
             recovery_path,
-            recovery_pgn: String::new(),
+            recovery_pgn: recovery_pgn.unwrap_or_default(),
             autosave_failed: false,
             model,
             workspace,
@@ -435,7 +473,6 @@ impl AnalyseScreen {
             fen_input,
             limit_controls,
             editor: None,
-            image_import: None,
             context_menu: None,
             copy_menu: false,
             scoresheet_scroll: ScrollHandle::new(),
@@ -914,7 +951,6 @@ impl Render for AnalyseScreen {
         self.sync_online(cx);
         let menu = self.render_context_menu(cx);
         let status_bar = self.render_status_bar(cx);
-        let image_import = self.render_image_import(viewport, cx);
         let mut side = Some(
             v_flex()
                 .gap(px(8.))
@@ -1015,7 +1051,6 @@ impl Render for AnalyseScreen {
             .size_full()
             .child(columns)
             .child(status_bar)
-            .children(image_import.map(|dialog| deferred(dialog).with_priority(3)))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|screen, _, _, cx| {

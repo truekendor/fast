@@ -204,7 +204,7 @@ impl Workspace {
                             ))
                     }),
             )
-            .child(super::imports::file_drop_overlay())
+            .child(super::imports::file_drop_overlay(None))
     }
 
     /// Shows where to drop files and gives the picker a keyboard-accessible paste button.
@@ -348,23 +348,21 @@ impl Workspace {
                 |drag, _, _, cx| cx.new(|_| drag.clone()),
             )
             .drag_over::<DraggedTab>(|style, _, _, _| style.border_color(rgb(T.accent)))
-            .when(analysis, |tab| {
-                tab.drag_over::<gpui::ExternalPaths>(|style, files, _, _| {
-                    style
-                        .border_color(rgb(file_drop_border(files)))
-                        .bg(rgb(T.selected))
-                })
-                .on_drop(cx.listener(
-                    move |workspace, files: &gpui::ExternalPaths, window, cx| {
-                        workspace.drop_analysis_files(
-                            files,
-                            FileDropTarget::AnalyseTab(id),
-                            window,
-                            cx,
-                        );
-                    },
-                ))
+            .drag_over::<gpui::ExternalPaths>(|style, files, _, _| {
+                style
+                    .border_color(rgb(file_drop_border(files)))
+                    .bg(rgb(T.selected))
             })
+            .on_drop(
+                cx.listener(move |workspace, files: &gpui::ExternalPaths, window, cx| {
+                    let target = if analysis {
+                        FileDropTarget::AnalyseTab(id)
+                    } else {
+                        FileDropTarget::NewTab
+                    };
+                    workspace.drop_analysis_files(files, target, window, cx);
+                }),
+            )
             .on_drop(cx.listener(move |this, drag: &DraggedTab, _, cx| {
                 let source = this.tabs.iter().position(|tab| tab.id == drag.id);
                 let target = this.tabs.iter().position(|tab| tab.id == id);

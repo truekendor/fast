@@ -63,8 +63,9 @@ impl TestPositionsScreen {
     }
 
     /// Reads and parses a file in the background.
-    pub(super) fn load(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if self.running() {
+    pub(crate) fn load(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if self.is_running() {
+            self.model.toast(SUITE_RUN_IN_PROGRESS, cx);
             return;
         }
         let read = path.clone();
@@ -77,6 +78,10 @@ impl TestPositionsScreen {
                 })
                 .await;
             let _ = this.update(cx, |screen, cx| {
+                if screen.is_running() {
+                    screen.model.toast(SUITE_RUN_IN_PROGRESS, cx);
+                    return;
+                }
                 match parsed {
                     Ok(lines) => {
                         screen.lines = lines;
@@ -154,7 +159,7 @@ impl TestPositionsScreen {
     }
 
     pub(super) fn render_file(&self, cx: &mut Context<Self>) -> Div {
-        let locked = self.running();
+        let locked = self.is_running();
         let choose = cx.entity();
         let (usable, skipped) = self.counts();
         let summary =
@@ -188,7 +193,6 @@ impl TestPositionsScreen {
                             }),
                     )
             });
-        let drop = cx.entity();
         v_flex()
             .gap(px(10.))
             .child(section_label("Positions"))
@@ -205,21 +209,16 @@ impl TestPositionsScreen {
                     .border_dashed()
                     .border_color(rgb(T.border_strong))
                     .bg(rgb(T.bg))
-                    .drag_over::<ExternalPaths>(|style, _, _, _| {
-                        style.border_color(rgb(T.accent)).bg(rgb(T.selected))
-                    })
-                    .on_drop(move |paths: &ExternalPaths, _, cx| {
-                        let Some(path) = paths.paths().first().cloned() else {
-                            return;
-                        };
-                        drop.update(cx, |screen, cx| screen.load(path, cx));
-                    })
                     .children(summary)
                     .child(
                         div()
                             .text_as(12.5, T.muted)
                             .text_center()
-                            .child(ui::i18n::t("Drop an .epd file here")),
+                            .child(ui::i18n::t(if locked {
+                                SUITE_RUN_IN_PROGRESS
+                            } else {
+                                "Drop an .epd file here"
+                            })),
                     )
                     .child(
                         btn("epd-choose", ui::i18n::t("Choose file…"))
@@ -271,7 +270,7 @@ impl TestPositionsScreen {
         let browse = cx.entity();
         let start = cx.entity();
         let stop = cx.entity();
-        let running = self.running();
+        let running = self.is_running();
         let limit_hint = match self.settings.limit {
             TestLimitKind::Depth => "Depth per position",
             TestLimitKind::Nodes => "Nodes per position (500000, 2M)",

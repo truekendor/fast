@@ -1,7 +1,7 @@
 //! Adds local and downloaded PGN collections without exposing unfinished databases.
 
 use anyhow::{Result, bail, ensure};
-use db::{Database, ImportControl, ImportOptions, import_games};
+use db::{Database, ImportControl, ImportOptions, ImportProgress, ImportSummary, import_games};
 use std::{
     fs::File,
     io::{Read, Seek, Write},
@@ -14,6 +14,59 @@ pub enum Source {
     Local(PathBuf),
     Web(String),
     Twic,
+}
+
+/// A PGN collection published from the workspace, with any source failure it survived.
+pub struct ImportedCollection {
+    pub path: PathBuf,
+    pub summary: ImportSummary,
+    pub read_error: Option<std::io::Error>,
+}
+
+/// Gives a local collection the file's name without its PGN or PGN.gz extension.
+pub fn pgn_collection_name(path: &Path) -> String {
+    let stem = path.file_stem().unwrap_or(path.as_os_str());
+    let stem = if crate::analysis_import::is_pgn_gzip(path) {
+        Path::new(stem).file_stem().unwrap_or(stem)
+    } else {
+        stem
+    };
+    stem.to_string_lossy().into_owned()
+}
+
+/// Stores a workspace PGN collection in its own database, preserving readable games on source errors.
+pub fn install_workspace_pgn(
+    directory: &Path,
+    file: &Path,
+    options: &ImportOptions,
+    control: &ImportControl,
+    progress: impl FnMut(ImportProgress),
+) -> Result<ImportedCollection> {
+    std::fs::create_dir_all(directory)?;
+    let staged = tempfile::NamedTempFile::new_in(directory)?;
+    let input = crate::analysis_import::game_input(file)?;
+    let (summary, read_error) =
+        db::import_games_prefix(staged.path(), input, options, control, progress)?;
+    ensure!(!summary.cancelled, "Cancelled");
+    if summary.games == 0
+        && let Some(err) = read_error
+    {
+        return Err(err.into());
+    }
+    let local_pgn = (!crate::analysis_import::is_pgn_gzip(file)).then_some(file);
+    let path = publish(
+        directory,
+        staged,
+        &pgn_collection_name(file),
+        "",
+        local_pgn,
+        control,
+    )?;
+    Ok(ImportedCollection {
+        path,
+        summary,
+        read_error,
+    })
 }
 
 /// Finds the latest PGN archive advertised by the TWIC publisher.
@@ -180,18 +233,35 @@ pub fn install(
     } else {
         import_path(&file, &filename, staged.path(), options, control, &progress)?;
     }
+    let description = if description.is_empty() && filename.starts_with("https://") {
+        &filename
+    } else {
+        description
+    };
+    publish(
+        directory,
+        staged,
+        name,
+        description,
+        local_pgn.as_deref(),
+        control,
+    )
+}
+
+/// Names and publishes a staged collection without overwriting an existing database.
+fn publish(
+    directory: &Path,
+    mut staged: tempfile::NamedTempFile,
+    name: &str,
+    description: &str,
+    source: Option<&Path>,
+    control: &ImportControl,
+) -> Result<PathBuf> {
     {
         let mut database = Database::open(staged.path())?;
         ensure!(database.game_count()? > 0, "The file contains no games");
-        database.set_details(
-            name,
-            if description.is_empty() && filename.starts_with("https://") {
-                &filename
-            } else {
-                description
-            },
-        )?;
-        if let Some(path) = &local_pgn {
+        database.set_details(name, description)?;
+        if let Some(path) = source {
             database.set_source_file(path)?;
         }
         let busy: i64 = db::open_sqlite(staged.path())?.query_row(
@@ -207,8 +277,13 @@ pub fn install(
         if path.exists() {
             continue;
         }
-        staged.persist_noclobber(&path)?;
-        return Ok(path);
+        match staged.persist_noclobber(&path) {
+            Ok(_) => return Ok(path),
+            Err(err) if err.error.kind() == std::io::ErrorKind::AlreadyExists => {
+                staged = err.file;
+            }
+            Err(err) => return Err(err.into()),
+        }
     }
     unreachable!("an unused collection name")
 }
@@ -216,6 +291,45 @@ pub fn install(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Publishes readable games before and after a rejected game, leaving a truncated game out.
+    #[test]
+    fn workspace_import_publishes_readable_games_from_damaged_gzip() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("Workspace games.PGN.GZ");
+        let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        gzip.write_all(
+            b"[Event \"One\"]\n\n1. e4 {A note} *\n\n[Event \"Broken\"]\n\n1. e5 *\n\n\
+              [Event \"Three\"]\n\n1. d4 *\n\n[Event \"Unfinished\"]\n\n1. c4",
+        )
+        .unwrap();
+        let mut bytes = gzip.finish().unwrap();
+        bytes.extend_from_slice(b"invalid gzip member");
+        std::fs::write(&source, bytes).unwrap();
+
+        let collection = install_workspace_pgn(
+            dir.path(),
+            &source,
+            &ImportOptions::default(),
+            &ImportControl::default(),
+            |_| {},
+        )
+        .unwrap();
+        assert!(collection.read_error.is_some());
+        assert_eq!(collection.summary.games, 2);
+        assert_eq!(collection.summary.skipped, 1);
+        assert_eq!(pgn_collection_name(&source), "Workspace games");
+        let database = Database::open(&collection.path).unwrap();
+        assert_eq!(database.game_count().unwrap(), 2);
+        assert!(
+            database
+                .game(1)
+                .unwrap()
+                .unwrap()
+                .to_pgn()
+                .contains("A note")
+        );
+    }
 
     /// Archive links are chosen by issue number, independent of page order.
     #[test]

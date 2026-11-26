@@ -2,11 +2,12 @@
 
 use std::{
     fs::File,
-    io::Read,
+    io::{BufRead, BufReader, Cursor, Read},
+    ops::ControlFlow,
     path::{Path, PathBuf},
 };
 
-use chess_core::{GameTree, parse_epd, parse_pgn};
+use chess_core::{GameTree, parse_epd, pgn::read_pgn_games};
 use gpui::{ClipboardEntry, ClipboardItem, Image};
 
 /// Image formats accepted by the screenshot decoder.
@@ -90,7 +91,7 @@ fn has_extension(path: &Path, formats: &[&str]) -> bool {
 }
 
 /// Recognizes the two-part extension used by gzip-compressed PGN files.
-fn is_pgn_gzip(path: &Path) -> bool {
+pub(crate) fn is_pgn_gzip(path: &Path) -> bool {
     path.file_stem()
         .zip(path.extension())
         .is_some_and(|(stem, ext)| {
@@ -99,60 +100,119 @@ fn is_pgn_gzip(path: &Path) -> bool {
         })
 }
 
-/// Reads all games and positions, preserving successful files when another import fails.
-pub(crate) fn read_game_files(paths: &[PathBuf]) -> (Vec<GameTree>, Vec<String>) {
-    let mut games = Vec::new();
-    let mut errors = Vec::new();
-    for path in paths {
-        let text = match read_game_text(path) {
-            Ok(text) => text,
-            Err(err) => {
-                errors.push(format!("{}: {err}", path.display()));
-                continue;
-            }
-        };
-        if path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("epd"))
-        {
-            let records = parse_epd(&text);
-            if records.is_empty() {
-                errors.push(format!("{}: no positions", path.display()));
-            }
-            for record in records {
-                match record.parsed {
-                    Ok(position) => games.push(GameTree::from_position(position.pos)),
-                    Err(err) => errors.push(format!("{}:{}: {err}", path.display(), record.line)),
-                }
-            }
-            continue;
-        }
-        let text = text.trim_start_matches('\u{feff}').trim();
-        if let Ok(tree) = GameTree::from_fen(text) {
-            games.push(tree);
-            continue;
-        }
-        match parse_pgn(text) {
-            Ok(mut loaded) if !loaded.is_empty() => games.append(&mut loaded),
-            Ok(_) => errors.push(format!("{}: no games", path.display())),
-            Err(err) => errors.push(format!("{}: {err}", path.display())),
-        }
-    }
-    (games, errors)
+/// Separates multi-game PGNs from files that should open in Analyse.
+pub(crate) fn split_game_collections(paths: Vec<PathBuf>) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    paths.into_iter().partition(|path| is_pgn_collection(path))
 }
 
-/// Reads plain notation or decompresses a PGN.gz using Fast's existing gzip support.
-fn read_game_text(path: &Path) -> Result<String, String> {
-    if is_pgn_gzip(path) {
-        let input = File::open(path).map_err(|err| err.to_string())?;
-        let mut text = String::new();
-        flate2::read::MultiGzDecoder::new(input)
-            .read_to_string(&mut text)
-            .map_err(|err| err.to_string())?;
-        Ok(text)
-    } else {
-        std::fs::read_to_string(path).map_err(|err| err.to_string())
+/// Looks for a second game to decide whether the PGN is a collection.
+fn is_pgn_collection(path: &Path) -> bool {
+    if !has_extension(path, &["pgn"]) && !is_pgn_gzip(path) {
+        return false;
     }
+    game_input(path).is_ok_and(|input| {
+        read_pgn_games(input)
+            .take_while(|result| !matches!(result, Err(chess_core::PgnError::Io(_))))
+            .nth(1)
+            .is_some()
+    })
+}
+
+/// Reports each game, position or error as it is read, until the receiver closes.
+pub(crate) fn read_game_files(
+    paths: &[PathBuf],
+    mut report: impl FnMut(Result<GameTree, String>) -> ControlFlow<()>,
+) {
+    for path in paths {
+        let mut report = |result: Result<GameTree, String>| {
+            report(result.map_err(|err| format!("{}: {err}", path.display())))
+        };
+        let result = if has_extension(path, &["epd"]) {
+            read_epd_file(path, &mut report)
+        } else {
+            read_game_file(path, &mut report)
+        };
+        if result.is_break() {
+            return;
+        }
+    }
+}
+
+/// Opens plain or gzip-compressed notation without reading the whole file.
+pub(crate) fn game_input(path: &Path) -> std::io::Result<BufReader<Box<dyn Read>>> {
+    let file = File::open(path)?;
+    let input: Box<dyn Read> = if is_pgn_gzip(path) {
+        Box::new(flate2::read::MultiGzDecoder::new(file))
+    } else {
+        Box::new(file)
+    };
+    Ok(BufReader::new(input))
+}
+
+/// Allows a standalone FEN in any supported game file, as before.
+fn standalone_fen(text: &str) -> Option<GameTree> {
+    GameTree::from_fen(text.trim_start_matches('\u{feff}').trim()).ok()
+}
+
+/// Keeps successful games from a file even when another game cannot be read.
+fn read_game_file(
+    path: &Path,
+    report: &mut impl FnMut(Result<GameTree, String>) -> ControlFlow<()>,
+) -> ControlFlow<()> {
+    let mut input = match game_input(path) {
+        Ok(input) => input,
+        Err(err) => return report(Err(err.to_string())),
+    };
+    let prefix = match input.fill_buf() {
+        Ok(prefix) => prefix,
+        Err(err) => return report(Err(err.to_string())),
+    };
+    // Read ahead only when the prefix could be a standalone FEN.
+    let mut text = String::new();
+    if std::str::from_utf8(prefix)
+        .ok()
+        .and_then(standalone_fen)
+        .is_some()
+    {
+        if let Err(err) = input.read_to_string(&mut text) {
+            return report(Err(err.to_string()));
+        }
+        if let Some(tree) = standalone_fen(&text) {
+            return report(Ok(tree));
+        }
+    }
+    let mut games = read_pgn_games(Cursor::new(text).chain(input)).peekable();
+    if games.peek().is_none() {
+        return report(Err("no games".to_owned()));
+    }
+    for game in games {
+        report(game.map_err(|err| err.to_string()))?;
+    }
+    ControlFlow::Continue(())
+}
+
+/// Reports each EPD position or its source line on error.
+fn read_epd_file(
+    path: &Path,
+    report: &mut impl FnMut(Result<GameTree, String>) -> ControlFlow<()>,
+) -> ControlFlow<()> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) => return report(Err(err.to_string())),
+    };
+    let records = parse_epd(&text);
+    if records.is_empty() {
+        return report(Err("no positions".to_owned()));
+    }
+    for record in records {
+        report(
+            record
+                .parsed
+                .map(|position| GameTree::from_position(position.pos))
+                .map_err(|err| format!("line {}: {err}", record.line)),
+        )?;
+    }
+    ControlFlow::Continue(())
 }
 
 #[cfg(test)]
@@ -160,6 +220,93 @@ mod tests {
     use super::*;
     use gpui::ImageFormat;
     use std::io::{Cursor, Write as _};
+
+    /// Only files with a second PGN record go to Database, regardless of compression.
+    #[test]
+    fn routes_one_game_to_analyse_and_multiple_games_to_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let single = dir.path().join("one.pgn");
+        let multiple = dir.path().join("multiple.PGN");
+        let compressed = dir.path().join("multiple.PGN.GZ");
+        let first = b"[Event \"One\"]\n\n1. e4 *\n\n";
+        let second = b"[Event \"Broken\"]\n\n1. e5 *\n";
+        let games = [first.as_slice(), second.as_slice()].concat();
+        std::fs::write(&single, first).unwrap();
+        std::fs::write(&multiple, &games).unwrap();
+        let mut gzip = flate2::write::GzEncoder::new(
+            File::create(&compressed).unwrap(),
+            flate2::Compression::fast(),
+        );
+        gzip.write_all(&games).unwrap();
+        gzip.finish().unwrap();
+
+        let (collections, notation) =
+            split_game_collections(vec![single.clone(), multiple.clone(), compressed.clone()]);
+        assert_eq!(collections, [multiple, compressed]);
+        assert_eq!(notation, [single]);
+    }
+
+    /// Collects streamed results for assertions.
+    fn collect_games(paths: &[PathBuf]) -> (Vec<GameTree>, Vec<String>) {
+        let mut games = Vec::new();
+        let mut errors = Vec::new();
+        read_game_files(paths, |result| {
+            match result {
+                Ok(game) => games.push(game),
+                Err(error) => errors.push(error),
+            }
+            ControlFlow::Continue(())
+        });
+        (games, errors)
+    }
+
+    /// Keeps valid games on either side of a bad game and proceeds to the next file.
+    #[test]
+    fn keeps_games_in_and_after_a_file_with_an_illegal_move() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("collection.pgn");
+        let second = dir.path().join("another.pgn");
+        let fen = dir.path().join("position.fen");
+        std::fs::write(
+            &first,
+            "[Event \"One\"]\n\n1. e4 *\n\n[Event \"Broken\"]\n\n1. e5 *\n\n[Event \"Two\"]\n\n1. d4 *",
+        )
+        .unwrap();
+        std::fs::write(&second, "[Event \"Three\"]\n\n1. c4 *").unwrap();
+        std::fs::write(&fen, GameTree::new().fen(GameTree::ROOT)).unwrap();
+        let (games, errors) = collect_games(&[first, dir.path().join("missing.pgn"), second, fen]);
+        assert_eq!(games.len(), 4);
+        for (game, (event, san)) in
+            games
+                .iter()
+                .zip([("One", "e4"), ("Two", "d4"), ("Three", "c4")])
+        {
+            assert_eq!(game.header("Event"), Some(event));
+            assert_eq!(game.node(game.mainline()[0]).san, san);
+        }
+        assert!(games[3].mainline().is_empty());
+        assert_eq!(errors.len(), 2);
+        assert!(errors[0].contains("collection.pgn") && errors[0].contains("game 2"));
+        assert!(errors[1].contains("missing.pgn"));
+    }
+
+    /// Preserves the start of a compressed collection if a later gzip member is damaged.
+    #[test]
+    fn keeps_games_before_a_gzip_read_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("damaged.pgn.gz");
+        let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        gzip.write_all(b"[Event \"One\"]\n\n1. e4 *\n\n").unwrap();
+        let mut bytes = gzip.finish().unwrap();
+        bytes.extend_from_slice(b"invalid gzip member");
+        std::fs::write(&path, bytes).unwrap();
+
+        let (games, errors) = collect_games(&[path]);
+        assert_eq!(games.len(), 1);
+        assert_eq!(games[0].header("Event"), Some("One"));
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("damaged.pgn.gz"));
+    }
 
     /// Windows can provide a screenshot as BMP alongside clipboard text.
     #[test]
@@ -203,7 +350,7 @@ mod tests {
 
         let (images, paths) = split_files(vec![pgn, png.clone(), epd]);
         assert!(matches!(&images[..], [ImageInput::File(path)] if path == &png));
-        let (games, errors) = read_game_files(&paths);
+        let (games, errors) = collect_games(&paths);
         assert_eq!(games.len(), 2);
         assert_eq!(games[0].header("Event"), Some("Imported"));
         assert_eq!(
@@ -211,7 +358,7 @@ mod tests {
             "8/4k1p1/8/pr2Nb2/3R2P1/8/5PP1/2K5 w - - 0 1"
         );
         assert_eq!(errors.len(), 1);
-        assert!(errors[0].contains("positions.epd:1"));
+        assert!(errors[0].contains("positions.epd: line 1"));
     }
     /// Shows the import prompt only when every dragged path has a supported extension.
     #[test]

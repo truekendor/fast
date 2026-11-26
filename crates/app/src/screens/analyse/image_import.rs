@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use chess_core::{Chess, Color, shakmaty::Board};
-use gpui::{App, RenderImage, Size};
+use gpui::{App, RenderImage};
 use ui::{i18n::t, widgets::dialog};
 
 use super::*;
@@ -13,8 +13,16 @@ mod selection;
 
 use selection::{ImageRect, SquareSelection};
 
-/// The progress or result of importing screenshots into this Analyse tab.
-pub(super) enum ImageImport {
+/// A workspace dialog that previews images before opening an Analyse position.
+pub(crate) struct ImageImportDialog {
+    model: Entity<AppModel>,
+    workspace: WeakEntity<Workspace>,
+    image_import: Option<ImageImport>,
+    edit_tab: Option<u64>,
+}
+
+/// The progress or result of recognizing the screenshots.
+enum ImageImport {
     Loading { _task: Task<()> },
     Failed,
     Ready(Box<BoardChoices>),
@@ -25,11 +33,9 @@ pub(super) struct BoardChoices {
     sources: Vec<Screenshot>,
     source: usize,
     selected: usize,
-    reuse_tab: bool,
     manual: Option<ManualSelection>,
-    rotated: bool,
-    turn: Color,
     preview: Entity<BoardView>,
+    thumbnails: Vec<Entity<BoardView>>,
 }
 
 /// The original RGB pixels, their scaled display copy and all detected boards.
@@ -43,12 +49,42 @@ struct Screenshot {
 struct Candidate {
     outline: ImageRect,
     board: Board,
+    options: PositionOptions,
+}
+
+/// The orientation and side to move chosen for one recognized position.
+#[derive(Clone, Copy)]
+struct PositionOptions {
+    rotated: bool,
+    turn: Color,
+}
+
+impl Default for PositionOptions {
+    /// Starts a new position in the screenshot's orientation with White to move.
+    fn default() -> Self {
+        Self {
+            rotated: false,
+            turn: Color::White,
+        }
+    }
+}
+
+impl PositionOptions {
+    /// Returns the board with this position's chosen orientation.
+    fn orient(self, board: &Board) -> Board {
+        let mut board = board.clone();
+        if self.rotated {
+            board.rotate_180();
+        }
+        board
+    }
 }
 
 /// A user-selected square and the result for its current bounds.
 struct ManualSelection {
     square: SquareSelection,
     result: Option<Board>,
+    options: PositionOptions,
     task: Option<Task<()>>,
     failed: bool,
     focus: FocusHandle,
@@ -66,6 +102,7 @@ fn read_screenshot(input: &ImageInput) -> anyhow::Result<Screenshot> {
                     end: grid.intersections[8][8],
                 },
                 board,
+                options: PositionOptions::default(),
             })
             .collect(),
         Err(err) => {
@@ -101,34 +138,76 @@ impl BoardChoices {
         &self.sources[self.source]
     }
 
-    /// Returns the current guess with the requested orientation applied.
-    fn oriented_board(&self) -> Option<Board> {
-        let mut board = match &self.manual {
-            Some(manual) => manual.result.clone()?,
-            None => self
-                .screenshot()
-                .candidates
-                .get(self.selected)?
-                .board
-                .clone(),
+    /// Selects a screenshot and prepares cards for the positions it contains.
+    fn select_screenshot(&mut self, source: usize, cx: &mut App) {
+        self.source = source;
+        self.selected = 0;
+        self.manual = None;
+        let mut prefs = self.preview.read(cx).prefs();
+        prefs.coordinates = ui::CoordinateStyle::Off;
+        self.thumbnails = self.sources[source]
+            .candidates
+            .iter()
+            .enumerate()
+            .map(|(index, candidate)| {
+                cx.new(|cx| {
+                    let mut view = BoardView::new(("detected-board-thumbnail", index)).read_only();
+                    view.set_prefs(prefs, cx);
+                    view.set_editing(Some(candidate.options.orient(&candidate.board)), cx);
+                    view
+                })
+            })
+            .collect();
+    }
+
+    /// Returns the current guess in its own orientation and with its side to move.
+    fn oriented_position(&self) -> Option<(Board, Color)> {
+        let (board, options) = match &self.manual {
+            Some(manual) => (manual.result.as_ref()?, manual.options),
+            None => {
+                let candidate = self.screenshot().candidates.get(self.selected)?;
+                (&candidate.board, candidate.options)
+            }
         };
-        if self.rotated {
-            board.rotate_180();
+        Some((options.orient(board), options.turn))
+    }
+
+    /// Changes only the options of the detected or manual position being previewed.
+    fn edit_position_options(&mut self, change: impl FnOnce(&mut PositionOptions)) {
+        if let Some(manual) = &mut self.manual {
+            change(&mut manual.options);
+        } else if let Some(candidate) = self.sources[self.source].candidates.get_mut(self.selected)
+        {
+            change(&mut candidate.options);
         }
-        Some(board)
     }
 
     /// Refreshes the board preview after a selection or orientation change.
     fn update_preview(&self, cx: &mut App) {
-        let board = self.oriented_board();
+        let board = self.oriented_position().map(|(board, _)| board);
+        if self.manual.is_none()
+            && let Some(thumbnail) = self.thumbnails.get(self.selected)
+        {
+            thumbnail.update(cx, |view, cx| view.set_editing(board.clone(), cx));
+        }
         self.preview
             .update(cx, |view, cx| view.set_editing(board, cx));
     }
 }
 
-impl AnalyseScreen {
+impl ImageImportDialog {
+    /// Creates a closed import dialog for the workspace.
+    pub(crate) fn new(model: Entity<AppModel>, workspace: WeakEntity<Workspace>) -> Self {
+        Self {
+            model,
+            workspace,
+            image_import: None,
+            edit_tab: None,
+        }
+    }
+
     /// Opens the file picker for a screenshot, leaving the current game in place.
-    pub(crate) fn import_image(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn import_image(&mut self, edit_tab: Option<u64>, cx: &mut Context<Self>) {
         if self.image_import.is_some() {
             return;
         }
@@ -140,7 +219,7 @@ impl AnalyseScreen {
             cx,
             move |path, cx| {
                 let _ = this.update(cx, |screen, cx| {
-                    screen.start_image_import(vec![ImageInput::File(path)], false, cx);
+                    screen.start_image_import(vec![ImageInput::File(path)], edit_tab, cx);
                 });
             },
         );
@@ -150,12 +229,13 @@ impl AnalyseScreen {
     pub(crate) fn start_image_import(
         &mut self,
         inputs: Vec<ImageInput>,
-        reuse_tab: bool,
+        edit_tab: Option<u64>,
         cx: &mut Context<Self>,
     ) {
         if inputs.is_empty() || self.image_import.is_some() {
             return;
         }
+        self.edit_tab = edit_tab;
 
         let task = cx.spawn(async move |this, cx| {
             let (sources, failed) = cx
@@ -181,21 +261,20 @@ impl AnalyseScreen {
                     if failed {
                         screen.model.toast("Some images could not be read.", cx);
                     }
-                    let prefs = screen.board.read(cx).prefs();
-                    let choices = BoardChoices {
+                    let prefs = screen.model.read(cx).config.board.prefs();
+                    let mut choices = BoardChoices {
                         sources,
                         source: 0,
                         selected: 0,
-                        reuse_tab,
                         manual: None,
-                        rotated: false,
-                        turn: Color::White,
                         preview: cx.new(|cx| {
                             let mut board = BoardView::new("image-position-preview").read_only();
                             board.set_prefs(prefs, cx);
                             board
                         }),
+                        thumbnails: Vec::new(),
                     };
+                    choices.select_screenshot(0, cx);
                     choices.update_preview(cx);
                     ImageImport::Ready(Box::new(choices))
                 });
@@ -267,35 +346,34 @@ impl AnalyseScreen {
     fn open_image_position(
         &mut self,
         position: Result<Chess, PositionEditor>,
-        reuse_tab: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.image_import = None;
-        match position {
-            Ok(position) if reuse_tab => {
-                self.close_editor(cx);
-                self.load_tree(GameTree::from_position(position), window, cx);
-            }
-            Ok(position) => {
-                let workspace = self.workspace.clone();
-                window.defer(cx, move |window, cx| {
-                    let _ = workspace.update(cx, |workspace, cx| {
-                        workspace.open_analysis(GameTree::from_position(position), window, cx);
-                    });
-                });
-            }
-            Err(editor) => self.show_editor(editor, cx),
-        }
+        let edit_tab = self.edit_tab.take();
+        let workspace = self.workspace.clone();
+        window.defer(cx, move |window, cx| {
+            let _ = workspace.update(cx, |workspace, cx| match position {
+                Ok(position) => {
+                    workspace.open_analysis(GameTree::from_position(position), window, cx);
+                }
+                Err(editor) => {
+                    workspace
+                        .image_editor_tab(edit_tab, window, cx)
+                        .update(cx, |screen, cx| screen.show_editor(editor, cx));
+                }
+            });
+        });
         cx.notify();
     }
 
     /// Draws the screenshot on the left and the inferred position on the right.
-    pub(super) fn render_image_import(
+    fn render_image_import(
         &self,
-        viewport: Size<Pixels>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<ui::widgets::Modal> {
+        let viewport = window.viewport_size();
         let width = (f32::from(viewport.width) - 48.).min(1000.);
         let body = match self.image_import.as_ref()? {
             ImageImport::Loading { .. } => {
@@ -309,7 +387,7 @@ impl AnalyseScreen {
                 .items_start()
                 .gap(px(16.))
                 .p(px(16.))
-                .child(self.render_screenshot(choices, width - 310., viewport.height, cx))
+                .child(self.render_screenshot(choices, width - 310., window, cx))
                 .child(self.render_position_preview(choices, cx))
                 .into_any_element(),
         };
@@ -322,6 +400,7 @@ impl AnalyseScreen {
             move |cx| {
                 let _ = this.update(cx, |screen, cx| {
                     screen.image_import = None;
+                    screen.edit_tab = None;
                     cx.notify();
                 });
             },
@@ -336,13 +415,12 @@ impl AnalyseScreen {
             .flex_none()
             .gap(px(8.))
             .child(section_label("Recognized position"));
-        let Some(board) = choices.oriented_board() else {
+        let Some((board, turn)) = choices.oriented_position() else {
             return column.child(import_message("The selected board will appear here."));
         };
-        let editor = PositionEditor::from_board(board, choices.turn);
+        let editor = PositionEditor::from_board(board, turn);
         let position = editor.position().map_err(|_| editor);
         let can_open = position.is_ok();
-        let reuse_tab = choices.reuse_tab;
         let action = if can_open {
             "Open position"
         } else {
@@ -359,7 +437,14 @@ impl AnalyseScreen {
                 btn("rotate-image-position", "Rotate position")
                     .compact()
                     .on_click(this.listen(|screen, _, cx| {
-                        screen.update_image_choice(|choices| choices.rotated = !choices.rotated, cx)
+                        screen.update_image_choice(
+                            |choices| {
+                                choices.edit_position_options(|options| {
+                                    options.rotated = !options.rotated
+                                })
+                            },
+                            cx,
+                        )
                     })),
             )
             .child(
@@ -368,12 +453,17 @@ impl AnalyseScreen {
                         (Color::White, "White to move"),
                         (Color::Black, "Black to move"),
                     ]
-                    .map(|(turn, label)| {
-                        btn(("image-position-turn", usize::from(turn.is_black())), label)
+                    .map(|(side, label)| {
+                        btn(("image-position-turn", usize::from(side.is_black())), label)
                             .compact()
-                            .selected(choices.turn == turn)
+                            .selected(turn == side)
                             .on_click(this.listen(move |screen, _, cx| {
-                                screen.update_image_choice(|choices| choices.turn = turn, cx)
+                                screen.update_image_choice(
+                                    |choices| {
+                                        choices.edit_position_options(|options| options.turn = side)
+                                    },
+                                    cx,
+                                )
                             }))
                     }),
                 ),
@@ -388,9 +478,19 @@ impl AnalyseScreen {
                 btn("confirm-image-position", action)
                     .primary()
                     .on_click(this.listen(move |screen, window, cx| {
-                        screen.open_image_position(position.clone(), reuse_tab, window, cx)
+                        screen.open_image_position(position.clone(), window, cx)
                     })),
             )
+    }
+}
+
+impl Render for ImageImportDialog {
+    /// Displays the import dialog above whichever tab the user is viewing.
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .absolute()
+            .inset_0()
+            .children(self.render_image_import(window, cx))
     }
 }
 
