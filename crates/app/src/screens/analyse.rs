@@ -284,9 +284,11 @@ impl AnalyseScreen {
         cx: &mut Context<Self>,
     ) -> Self {
         let path = model.read(cx).paths.data_dir.join("game-recovery.json");
-        Self::new_with_recovery(model, workspace, window, cx, path)
+        let demo = model.read(cx).demo;
+        Self::build(model, workspace, window, cx, path, demo, None)
     }
 
+    /// Opens an Analyse tab on an empty board, or on the game kept in `recovery_path`.
     pub fn new_with_recovery(
         model: Entity<AppModel>,
         workspace: WeakEntity<Workspace>,
@@ -294,7 +296,7 @@ impl AnalyseScreen {
         cx: &mut Context<Self>,
         recovery_path: std::path::PathBuf,
     ) -> Self {
-        Self::create(model, workspace, window, cx, recovery_path, None)
+        Self::build(model, workspace, window, cx, recovery_path, false, None)
     }
 
     /// Opens an imported tree whose recovery file was prepared off the UI thread.
@@ -307,25 +309,28 @@ impl AnalyseScreen {
         tree: GameTree,
         recovery_pgn: String,
     ) -> Self {
-        let mut screen = Self::create(
+        let mut screen = Self::build(
             model,
             workspace,
             window,
             cx,
             recovery_path,
+            false,
             Some(recovery_pgn),
         );
         screen.load_tree(tree, window, cx);
         screen
     }
 
-    /// Sets up a screen, reading a saved game only when no imported snapshot was supplied.
-    fn create(
+    /// Builds a screen. The first demo tab starts on the sample game. An imported
+    /// snapshot is already prepared, so its new tab skips reading recovery from disk.
+    fn build(
         model: Entity<AppModel>,
         workspace: WeakEntity<Workspace>,
         window: &mut Window,
         cx: &mut Context<Self>,
         recovery_path: std::path::PathBuf,
+        demo: bool,
         recovery_pgn: Option<String>,
     ) -> Self {
         let board = cx.new(|_| BoardView::new("analyse-board"));
@@ -411,7 +416,6 @@ impl AnalyseScreen {
                 ModelEvent::Engines | ModelEvent::Restored => {}
             }),
         ];
-        let demo = model.read(cx).demo;
         let tree = if demo {
             chess_core::sample::najdorf()
         } else {
