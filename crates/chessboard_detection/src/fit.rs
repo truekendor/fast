@@ -4,6 +4,8 @@ use crate::{LINE_TOLERANCE, MIN_BOARD_SIDE, candidates::Candidate, raster::Raste
 
 // A narrow crop at the image edge can remove the same fraction of a cell at any resolution.
 const MAX_EDGE_CROP_FRACTION: f64 = 0.10;
+/// Requires sufficient contrast at more than half of the 49 internal crossings.
+const MIN_SUPPORTED_CROSSINGS: usize = 26;
 
 /// Holds a fitted grid and the evidence used to resolve overlapping proposals.
 pub(super) struct Fit {
@@ -92,9 +94,11 @@ fn regular_lines(observed: &[f64; 7], weights: &[f32; 7], pitch: f64) -> Option<
             }
         }
     }
+
     if best.len() < 5 {
         return None;
     }
+
     let centre_x = best.iter().map(|&(x, _)| x).sum::<f64>() / best.len() as f64;
     let centre_y = best.iter().map(|&(_, y)| y).sum::<f64>() / best.len() as f64;
     let step = best
@@ -105,6 +109,7 @@ fn regular_lines(observed: &[f64; 7], weights: &[f32; 7], pitch: f64) -> Option<
             .iter()
             .map(|&(x, _)| (x - centre_x).powi(2))
             .sum::<f64>();
+
     let supported_steps = best
         .windows(2)
         .filter(|pair| {
@@ -117,6 +122,9 @@ fn regular_lines(observed: &[f64; 7], weights: &[f32; 7], pitch: f64) -> Option<
 
 /// Measures the weakest arm of a crossing at several distances from the intersection.
 fn contrast(gray: &Raster, x: f64, y: f64, dx: f64, dy: f64, polarity: f32) -> f32 {
+    // These heuristic distances come from the Python reference detector. Sampling at
+    // 14%, 21% and 28% of a square keeps probes scale-independent and avoids relying
+    // on one potentially noisy pixel near the intersection.
     [0.14, 0.21, 0.28]
         .into_iter()
         .map(|offset| {
@@ -150,6 +158,7 @@ fn crossing_evidence(
     let mut cols = [false; 7];
     let mut interior = 0.0;
     let mut sides = [0.0; 4];
+
     for row in 0_usize..=8 {
         for col in 0_usize..=8 {
             let inside_x = (1..8).contains(&col);
@@ -157,12 +166,15 @@ fn crossing_evidence(
             if !inside_x && !inside_y {
                 continue;
             }
+
             let sign = if (row + col).is_multiple_of(2) {
                 polarity
             } else {
                 -polarity
             };
+
             let value = contrast(gray, x + col as f64 * dx, y + row as f64 * dy, dx, dy, sign);
+
             if inside_x && inside_y {
                 if value >= 6.0 {
                     rows[row - 1] = true;
@@ -180,12 +192,14 @@ fn crossing_evidence(
             }
         }
     }
-    if crossings < 26
+
+    if crossings < MIN_SUPPORTED_CROSSINGS
         || rows.into_iter().filter(|value| *value).count() < 6
         || cols.into_iter().filter(|value| *value).count() < 6
     {
         return None;
     }
+
     let interior = interior / 49.0;
     let continuation = sides.into_iter().fold(0.0, f32::max) / 7.0;
     (continuation <= 0.85 * interior).then_some((crossings, interior - 0.65 * continuation))

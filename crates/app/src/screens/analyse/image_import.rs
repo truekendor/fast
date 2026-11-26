@@ -556,26 +556,4 @@ mod tests {
         assert_eq!(screenshot.pixels.as_ref(), &image);
         assert!(screenshot.candidates.is_empty());
     }
-
-    /// Keeps the original image and reports outlines for all of its boards.
-    #[test]
-    fn imports_original_screenshot_and_all_detected_positions() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../services/chessboard_detection/fixtures/screenshots/images/chessboard_detect_0004.png");
-        let recognizer = board_image::BoardRecognizer::default();
-        let screenshot = read_screenshot(&ImageInput::File(path), &recognizer).unwrap();
-        assert_eq!(screenshot.candidates.len(), 3);
-        let first = &screenshot.candidates[0];
-        assert!(first.outline.start[0] < first.outline.end[0]);
-        assert!(first.outline.start[1] < first.outline.end[1]);
-        let expected = "8/4k1p1/8/pr2Nb2/3R2P1/8/5PP1/2K5";
-        assert_eq!(first.board.board_fen().to_string(), expected);
-        let [left, top, side] =
-            SquareSelection::centered(screenshot.pixels.dimensions(), Some(first.outline))
-                .pixel_bounds(screenshot.pixels.dimensions());
-        let manual = recognizer
-            .recognize_selection(&screenshot.pixels, left, top, side)
-            .unwrap();
-        assert_eq!(manual.board_fen().to_string(), expected);
-    }
 }

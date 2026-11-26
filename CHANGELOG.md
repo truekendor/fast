@@ -4,6 +4,8 @@ Settings › Changelog shows this file. Describe the finished changes since each
 
 ## 0.1.4
 
+- Analyse: screenshot recognition uses grayscale cells to match the web classifier's input.
+
 - Analyse: the manual screenshot selection button reads “Extract position”.
 - Analyse: screenshots become available as they are recognized, and manual selections reuse the loaded piece classifier.
 - Test positions: dropping an EPD during a run explains when another suite can be loaded.

@@ -118,11 +118,19 @@ impl BoardRecognizer {
     }
 }
 
-/// Crops a region using the same pixel boundaries for previews and inference.
-fn crop(image: &RgbImage, start: [f64; 2], end: [f64; 2]) -> RgbImage {
+/// Extracts a cell from the fitted grid and converts it to grayscale for the classifier.
+fn classifier_cell(image: &RgbImage, start: [f64; 2], end: [f64; 2]) -> RgbImage {
     let [left, top] = start.map(|coordinate| coordinate.round() as u32);
     let [right, bottom] = end.map(|coordinate| coordinate.round() as u32);
-    image::imageops::crop_imm(image, left, top, right - left, bottom - top).to_image()
+    let mut cell =
+        image::imageops::crop_imm(image, left, top, right - left, bottom - top).to_image();
+    for pixel in cell.pixels_mut() {
+        let [red, green, blue] = pixel.0.map(u32::from);
+        // Match the luminance weights of the web canvas grayscale filter.
+        let gray = ((2126 * red + 7152 * green + 722 * blue + 5000) / 10_000) as u8;
+        pixel.0 = [gray; 3];
+    }
+    cell
 }
 
 /// Classifies the 64 cells and records each piece at its corresponding square.
@@ -134,7 +142,7 @@ fn recognize_pieces(
     let mut board = Board::empty();
     for index in 0..64 {
         let (row, col) = (index / 8, index % 8);
-        let cell = crop(
+        let cell = classifier_cell(
             image,
             grid.intersections[row][col],
             grid.intersections[row + 1][col + 1],

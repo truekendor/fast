@@ -16,29 +16,18 @@
 The four domain crates are pure and unit-tested, including a fake UCI engine for process tests
 (`crates/engine/tests`).
 
-## Experimental services
-
-[`services/chessboard_detection`](services/chessboard_detection/README.md) is a standalone
-Python/OpenCV prototype. Its detector maps a screenshot to an 8×8 grid in source pixels.
-The CLI handles image decoding, JSON output and diagnostic overlays. The point-based output
-can be consumed by a future piece classifier or a background import task in Fast. The service
-runs outside GPUI and Cargo and needs no Fast profile.
-The demo provides a color-based detector for one grid and a line-based detector for multiple
-grids. Both return intersections in source pixels and can be compared with the same fixture
-benchmark.
-
 Fast also runs grid detection directly through `--detect-grid IMAGE OUTPUT.json`. The
 command decodes a PNG or JPEG with the existing Rust image library and calls
 `chessboard_detection` before loading GPUI or a user profile. The detector crate takes
-grayscale pixels and has no dependencies. The Python service runs only as a separate
-experiment and reference benchmark.
+grayscale pixels and has no dependencies.
 For the crossing filter, the crate selects AVX at runtime on compatible x86-64 CPUs and
 uses the portable scalar code elsewhere. Both implementations are linked into Fast.
 The allowed crop of a fitted outer edge scales with the size of a square and has a two-pixel
 minimum for small boards. The returned grid stays within the screenshot.
 
-`--recognize-board IMAGE OUTPUT.json` runs the same grid detector, crops the RGB cells and
-reuses one CPU classifier for all detected boards. `piece_recognition` embeds the converted
+`--recognize-board IMAGE OUTPUT.json` runs the same grid detector, crops the cells and
+converts them to grayscale before inference. It reuses one CPU classifier for all detected
+boards. `piece_recognition` embeds the converted
 weights and runs them through `tract` in process. Each recognized board includes its grid and
 the piece-placement field of FEN in both orientations.
 Analyse reuses one lazily initialized classifier per workspace on background tasks. The
