@@ -33,14 +33,18 @@ fn fit_axis(
             |y: f64| derivative.row((y.round_ties_even() as usize).min(derivative.height - 1));
         (row(crossing - offset), row(crossing + offset))
     });
+
     let mut observed = [0.0; 7];
     let mut weights = [0.0; 7];
+
     for index in 0..7 {
         let expected = (start + (index + 1) as f64 * pitch).round_ties_even() as isize;
         weights[index] = f32::NEG_INFINITY;
+
         for shift in -search..=search {
             let x = (expected + shift).clamp(0, derivative.width as isize - 1) as usize;
             let mut response = 0.0;
+
             for (cross, &(above, below)) in rows.iter().enumerate() {
                 let edge = below[x] - above[x];
                 response += if (cross + index).is_multiple_of(2) {
@@ -49,13 +53,16 @@ fn fit_axis(
                     -edge
                 };
             }
+
             response = response / 7.0 * polarity;
+
             if response > weights[index] {
                 weights[index] = response;
                 observed[index] = x as f64 + 0.5;
             }
         }
     }
+
     regular_lines(&observed, &weights, pitch)
 }
 
@@ -63,24 +70,28 @@ fn fit_axis(
 fn regular_lines(observed: &[f64; 7], weights: &[f32; 7], pitch: f64) -> Option<(f64, f64)> {
     let mut best = Vec::new();
     let mut score = 0.0;
+
     for first in 0..7 {
         for second in first + 1..7 {
             let step = (observed[second] - observed[first]) / (second - first) as f64;
             if (step - pitch).abs() > (pitch * 0.065).max(1.5) {
                 continue;
             }
+
             let origin = observed[first] - step * (first + 1) as f64;
             let inliers = std::array::from_fn::<_, 7, _>(|index| {
                 weights[index] > 2.0
                     && (observed[index] - origin - step * (index + 1) as f64).abs()
                         <= LINE_TOLERANCE + 1e-9
             });
+
             let support: f32 = inliers
                 .iter()
                 .zip(weights)
                 .filter(|(keep, _)| **keep)
                 .map(|(_, weight)| 1.0 + weight.min(50.0) / 500.0)
                 .sum();
+
             if support > score {
                 score = support;
                 best.clear();
@@ -122,6 +133,9 @@ fn regular_lines(observed: &[f64; 7], weights: &[f32; 7], pitch: f64) -> Option<
 
 /// Measures the weakest arm of a crossing at several distances from the intersection.
 fn contrast(gray: &Raster, x: f64, y: f64, dx: f64, dy: f64, polarity: f32) -> f32 {
+    // this part might need to be rewritten
+    // or at least reasoned about
+
     // These heuristic distances come from the Python reference detector. Sampling at
     // 14%, 21% and 28% of a square keeps probes scale-independent and avoids relying
     // on one potentially noisy pixel near the intersection.
@@ -227,6 +241,7 @@ pub(super) fn refine(
     {
         return None;
     }
+
     let (crossings, strength) = crossing_evidence(gray, x, y, dx, dy, polarity)?;
     Some(Fit {
         x,
