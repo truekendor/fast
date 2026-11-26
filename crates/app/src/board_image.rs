@@ -1,6 +1,6 @@
 //! Shared image decoding, grid detection and piece recognition for Fast.
 
-use std::{io::Cursor, path::Path};
+use std::{io::Cursor, path::Path, sync::OnceLock};
 
 use anyhow::Context as _;
 use chess_core::shakmaty::{Board, Piece, Square};
@@ -56,46 +56,66 @@ pub(crate) fn detect(image: &RgbImage, scalar: bool) -> Vec<Grid> {
     detect(&pixels, image.width() as usize, image.height() as usize)
 }
 
-/// Finds every board and reuses one classifier for all of its cells.
-pub(crate) fn recognize(image: &RgbImage, scalar: bool) -> anyhow::Result<Vec<RecognizedBoard>> {
-    let grids = detect(image, scalar);
-    if grids.is_empty() {
-        return Ok(Vec::new());
-    }
-    let classifier = Classifier::embedded().context("could not load the piece classifier")?;
-    grids
-        .into_iter()
-        .map(|grid| recognize_pieces(&classifier, image, grid))
-        .collect()
+/// Lazily prepares the embedded model and shares its inference plan between requests.
+#[derive(Default)]
+pub(crate) struct BoardRecognizer {
+    classifier: OnceLock<Result<Classifier, String>>,
 }
 
-/// Recognizes an axis-aligned square chosen by the user without running grid detection.
-pub(crate) fn recognize_selection(
-    image: &RgbImage,
-    left: u32,
-    top: u32,
-    side: u32,
-) -> anyhow::Result<Board> {
-    anyhow::ensure!(
-        side >= 8
-            && side <= image.width().saturating_sub(left)
-            && side <= image.height().saturating_sub(top),
-        "the board selection must be inside the image and at least eight pixels wide"
-    );
-    let intersections = std::array::from_fn(|row| {
-        std::array::from_fn(|column| {
-            [
-                f64::from(left) + f64::from(side) * column as f64 / 8.,
-                f64::from(top) + f64::from(side) * row as f64 / 8.,
-            ]
-        })
-    });
-    let classifier = Classifier::embedded().context("could not load the piece classifier")?;
-    let grid = Grid {
-        intersections,
-        matched_crossings: 0,
-    };
-    Ok(recognize_pieces(&classifier, image, grid)?.board)
+impl BoardRecognizer {
+    /// Loads the embedded classifier only when a board first needs inference.
+    fn classifier(&self) -> anyhow::Result<&Classifier> {
+        self.classifier
+            .get_or_init(|| Classifier::embedded().map_err(|err| format!("{err:#}")))
+            .as_ref()
+            .map_err(|err| anyhow::anyhow!("could not load the piece classifier: {err}"))
+    }
+
+    /// Finds every board and classifies the pieces in each detected grid.
+    pub(crate) fn recognize(
+        &self,
+        image: &RgbImage,
+        scalar: bool,
+    ) -> anyhow::Result<Vec<RecognizedBoard>> {
+        let grids = detect(image, scalar);
+        if grids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let classifier = self.classifier()?;
+        grids
+            .into_iter()
+            .map(|grid| recognize_pieces(classifier, image, grid))
+            .collect()
+    }
+
+    /// Recognizes an axis-aligned square chosen by the user without running grid detection.
+    pub(crate) fn recognize_selection(
+        &self,
+        image: &RgbImage,
+        left: u32,
+        top: u32,
+        side: u32,
+    ) -> anyhow::Result<Board> {
+        anyhow::ensure!(
+            side >= 8
+                && side <= image.width().saturating_sub(left)
+                && side <= image.height().saturating_sub(top),
+            "the board selection must be inside the image and at least eight pixels wide"
+        );
+        let intersections = std::array::from_fn(|row| {
+            std::array::from_fn(|column| {
+                [
+                    f64::from(left) + f64::from(side) * column as f64 / 8.,
+                    f64::from(top) + f64::from(side) * row as f64 / 8.,
+                ]
+            })
+        });
+        let grid = Grid {
+            intersections,
+            matched_crossings: 0,
+        };
+        Ok(recognize_pieces(self.classifier()?, image, grid)?.board)
+    }
 }
 
 /// Crops a region using the same pixel boundaries for previews and inference.

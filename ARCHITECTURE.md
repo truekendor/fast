@@ -41,8 +41,9 @@ minimum for small boards. The returned grid stays within the screenshot.
 reuses one CPU classifier for all detected boards. `piece_recognition` embeds the converted
 weights and runs them through `tract` in process. Each recognized board includes its grid and
 the piece-placement field of FEN in both orientations.
-Analyse calls the same Rust image service on a background task, then outlines the detected
-boards on the original screenshot beside the position preview. A manual square can supply
+Analyse reuses one lazily initialized classifier per workspace on background tasks. The
+dialog receives each processed screenshot through a bounded channel so the first boards
+can be inspected while the remaining images are processed. A manual square can supply
 the 8×8 cell boundaries to the same classifier when automatic detection misses a board. A guess
 that needs correction can be sent to the position editor. The workspace routes file drops
 from every screen to that preview or to the existing chess parsers. The workspace owns the

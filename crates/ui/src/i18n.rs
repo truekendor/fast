@@ -229,6 +229,7 @@ pub fn translate(language: Language, text: &str) -> &str {
             "Import position from image" => "Stellung aus Bild importieren",
             "Choose a board image" => "Brettbild auswählen",
             "Looking for chessboards…" => "Schachbretter werden gesucht…",
+            "Processing more images…" => "Weitere Bilder werden verarbeitet…",
             "Could not read the image. Use PNG, JPEG, BMP or WebP." => {
                 "Das Bild konnte nicht gelesen werden. Verwenden Sie PNG, JPEG, BMP oder WebP."
             }
@@ -265,8 +266,8 @@ pub fn translate(language: Language, text: &str) -> &str {
             "Next image" => "Nächstes Bild",
             "Select area manually" => "Bereich manuell wählen",
             "Use automatic detection" => "Automatische Erkennung verwenden",
-            "Recognize selected area" => "Gewählten Bereich erkennen",
-            "Recognizing…" => "Wird erkannt…",
+            "Extract position" => "Stellung extrahieren",
+            "Extracting position…" => "Stellung wird extrahiert…",
             "The selected board will appear here." => "Das ausgewählte Brett erscheint hier.",
             "Could not recognize the selected area." => {
                 "Der gewählte Bereich konnte nicht erkannt werden."

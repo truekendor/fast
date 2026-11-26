@@ -17,13 +17,15 @@ use selection::{ImageRect, SquareSelection};
 pub(crate) struct ImageImportDialog {
     model: Entity<AppModel>,
     workspace: WeakEntity<Workspace>,
+    recognizer: Arc<board_image::BoardRecognizer>,
+    batch_task: Option<Task<()>>,
     image_import: Option<ImageImport>,
     edit_tab: Option<u64>,
 }
 
 /// The progress or result of recognizing the screenshots.
 enum ImageImport {
-    Loading { _task: Task<()> },
+    Loading,
     Failed,
     Ready(Box<BoardChoices>),
 }
@@ -91,9 +93,12 @@ struct ManualSelection {
 }
 
 /// Reads a screenshot and preserves it even when automatic detection finds no board.
-fn read_screenshot(input: &ImageInput) -> anyhow::Result<Screenshot> {
+fn read_screenshot(
+    input: &ImageInput,
+    recognizer: &board_image::BoardRecognizer,
+) -> anyhow::Result<Screenshot> {
     let pixels = input.read()?;
-    let candidates = match board_image::recognize(&pixels, false) {
+    let candidates = match recognizer.recognize(&pixels, false) {
         Ok(boards) => boards
             .into_iter()
             .map(|board_image::RecognizedBoard { grid, board }| Candidate {
@@ -201,6 +206,8 @@ impl ImageImportDialog {
         Self {
             model,
             workspace,
+            recognizer: Arc::default(),
+            batch_task: None,
             image_import: None,
             edit_tab: None,
         }
@@ -237,51 +244,76 @@ impl ImageImportDialog {
         }
         self.edit_tab = edit_tab;
 
-        let task = cx.spawn(async move |this, cx| {
-            let (sources, failed) = cx
-                .background_spawn(async move {
-                    let mut sources = Vec::new();
-                    let mut failed = false;
-                    for input in inputs {
-                        match read_screenshot(&input) {
-                            Ok(screenshot) => sources.push(screenshot),
-                            Err(err) => {
-                                failed = true;
-                                log::warn!("Image import failed: {err:#}");
-                            }
+        let recognizer = self.recognizer.clone();
+        let (send, receive) = smol::channel::bounded(1);
+        let worker = cx.background_spawn(async move {
+            for input in inputs {
+                if send.is_closed() {
+                    break;
+                }
+                let screenshot = read_screenshot(&input, &recognizer);
+                if send.send(screenshot).await.is_err() {
+                    break;
+                }
+            }
+        });
+        self.image_import = Some(ImageImport::Loading);
+        self.batch_task = Some(cx.spawn(async move |this, cx| {
+            let mut failed = false;
+            while let Ok(result) = receive.recv().await {
+                match result {
+                    Ok(screenshot) => {
+                        if this
+                            .update(cx, |screen, cx| screen.add_screenshot(screenshot, cx))
+                            .is_err()
+                        {
+                            return;
                         }
                     }
-                    (sources, failed)
-                })
-                .await;
-            let _ = this.update(cx, |screen, cx| {
-                screen.image_import = Some(if sources.is_empty() {
-                    ImageImport::Failed
-                } else {
-                    if failed {
-                        screen.model.toast("Some images could not be read.", cx);
+                    Err(err) => {
+                        failed = true;
+                        log::warn!("Image import failed: {err:#}");
                     }
-                    let prefs = screen.model.read(cx).config.board.prefs();
-                    let mut choices = BoardChoices {
-                        sources,
-                        source: 0,
-                        selected: 0,
-                        manual: None,
-                        preview: cx.new(|cx| {
-                            let mut board = BoardView::new("image-position-preview").read_only();
-                            board.set_prefs(prefs, cx);
-                            board
-                        }),
-                        thumbnails: Vec::new(),
-                    };
-                    choices.select_screenshot(0, cx);
-                    choices.update_preview(cx);
-                    ImageImport::Ready(Box::new(choices))
-                });
+                }
+            }
+            worker.await;
+            let _ = this.update(cx, |screen, cx| {
+                screen.batch_task = None;
+                if matches!(screen.image_import, Some(ImageImport::Loading)) {
+                    screen.image_import = Some(ImageImport::Failed);
+                } else if failed {
+                    screen.model.toast("Some images could not be read.", cx);
+                }
                 cx.notify();
             });
-        });
-        self.image_import = Some(ImageImport::Loading { _task: task });
+        }));
+        cx.notify();
+    }
+
+    /// Shows the first readable screenshot immediately and appends later ones without changing the selection.
+    fn add_screenshot(&mut self, screenshot: Screenshot, cx: &mut Context<Self>) {
+        match &mut self.image_import {
+            Some(ImageImport::Loading) => {
+                let prefs = self.model.read(cx).config.board.prefs();
+                let mut choices = BoardChoices {
+                    sources: vec![screenshot],
+                    source: 0,
+                    selected: 0,
+                    manual: None,
+                    preview: cx.new(|cx| {
+                        let mut board = BoardView::new("image-position-preview").read_only();
+                        board.set_prefs(prefs, cx);
+                        board
+                    }),
+                    thumbnails: Vec::new(),
+                };
+                choices.select_screenshot(0, cx);
+                choices.update_preview(cx);
+                self.image_import = Some(ImageImport::Ready(Box::new(choices)));
+            }
+            Some(ImageImport::Ready(choices)) => choices.sources.push(screenshot),
+            _ => return,
+        }
         cx.notify();
     }
 
@@ -304,6 +336,7 @@ impl ImageImportDialog {
             return;
         };
         let pixels = choices.screenshot().pixels.clone();
+        let recognizer = self.recognizer.clone();
         let Some(manual) = &mut choices.manual else {
             return;
         };
@@ -316,7 +349,7 @@ impl ImageImportDialog {
             let [left, top, side] = square.pixel_bounds(pixels.dimensions());
             let result = cx
                 .background_spawn(async move {
-                    board_image::recognize_selection(&pixels, left, top, side)
+                    recognizer.recognize_selection(&pixels, left, top, side)
                 })
                 .await;
             let _ = this.update(cx, |screen, cx| {
@@ -349,6 +382,7 @@ impl ImageImportDialog {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.batch_task = None;
         self.image_import = None;
         let edit_tab = self.edit_tab.take();
         let workspace = self.workspace.clone();
@@ -376,9 +410,7 @@ impl ImageImportDialog {
         let viewport = window.viewport_size();
         let width = (f32::from(viewport.width) - 48.).min(1000.);
         let body = match self.image_import.as_ref()? {
-            ImageImport::Loading { .. } => {
-                import_message("Looking for chessboards…").into_any_element()
-            }
+            ImageImport::Loading => import_message("Looking for chessboards…").into_any_element(),
             ImageImport::Failed => {
                 import_message("Could not read the image. Use PNG, JPEG, BMP or WebP.")
                     .into_any_element()
@@ -399,6 +431,7 @@ impl ImageImportDialog {
             body,
             move |cx| {
                 let _ = this.update(cx, |screen, cx| {
+                    screen.batch_task = None;
                     screen.image_import = None;
                     screen.edit_tab = None;
                     cx.notify();
@@ -512,10 +545,13 @@ mod tests {
         let image = image::RgbImage::from_pixel(160, 120, image::Rgb([120; 3]));
         let mut bytes = std::io::Cursor::new(Vec::new());
         image.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
-        let screenshot = read_screenshot(&ImageInput::Clipboard(gpui::Image::from_bytes(
-            gpui::ImageFormat::Png,
-            bytes.into_inner(),
-        )))
+        let screenshot = read_screenshot(
+            &ImageInput::Clipboard(gpui::Image::from_bytes(
+                gpui::ImageFormat::Png,
+                bytes.into_inner(),
+            )),
+            &board_image::BoardRecognizer::default(),
+        )
         .unwrap();
         assert_eq!(screenshot.pixels.as_ref(), &image);
         assert!(screenshot.candidates.is_empty());
@@ -526,7 +562,8 @@ mod tests {
     fn imports_original_screenshot_and_all_detected_positions() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../services/chessboard_detection/fixtures/screenshots/images/chessboard_detect_0004.png");
-        let screenshot = read_screenshot(&ImageInput::File(path)).unwrap();
+        let recognizer = board_image::BoardRecognizer::default();
+        let screenshot = read_screenshot(&ImageInput::File(path), &recognizer).unwrap();
         assert_eq!(screenshot.candidates.len(), 3);
         let first = &screenshot.candidates[0];
         assert!(first.outline.start[0] < first.outline.end[0]);
@@ -536,7 +573,9 @@ mod tests {
         let [left, top, side] =
             SquareSelection::centered(screenshot.pixels.dimensions(), Some(first.outline))
                 .pixel_bounds(screenshot.pixels.dimensions());
-        let manual = board_image::recognize_selection(&screenshot.pixels, left, top, side).unwrap();
+        let manual = recognizer
+            .recognize_selection(&screenshot.pixels, left, top, side)
+            .unwrap();
         assert_eq!(manual.board_fen().to_string(), expected);
     }
 }

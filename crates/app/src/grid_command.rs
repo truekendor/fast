@@ -80,7 +80,8 @@ pub(crate) fn run_if_requested() -> Option<ExitCode> {
 fn detect(input: &Path, output: &Path, scalar: bool, recognize: bool) -> anyhow::Result<()> {
     let image = board_image::read(input)?;
     if recognize {
-        let boards = board_image::recognize(&image, scalar)?
+        let boards = board_image::BoardRecognizer::default()
+            .recognize(&image, scalar)?
             .into_iter()
             .map(|board_image::RecognizedBoard { grid, mut board }| {
                 let placement = board.board_fen().to_string();

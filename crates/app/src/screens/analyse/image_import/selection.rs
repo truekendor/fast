@@ -199,6 +199,13 @@ impl ImageImportDialog {
                     .justify_between()
                     .gap(px(8.))
                     .child(section_label("Original screenshot"))
+                    .when(self.batch_task.is_some(), |row| {
+                        row.child(
+                            div()
+                                .text_as(13., T.muted)
+                                .child(t("Processing more images…")),
+                        )
+                    })
                     .when(choices.sources.len() > 1, |row| {
                         let count = choices.sources.len();
                         row.child(self.image_source_nav(choices.source, count, cx))
@@ -238,9 +245,9 @@ impl ImageImportDialog {
                             btn(
                                 "recognize-selected-area",
                                 if manual.task.is_some() {
-                                    "Recognizing…"
+                                    "Extracting position…"
                                 } else {
-                                    "Recognize selected area"
+                                    "Extract position"
                                 },
                             )
                             .compact()

@@ -8,7 +8,7 @@ A standalone product backlog for the native, offline chess workstation. Prioriti
 - [x] Keep rotation and side to move independent for every detected position, and update its card when it rotates.
 - [x] Import multi-game PGNs into Database and keep readable games when the file contains an error.
 - [x] Explain why an EPD suite cannot be loaded while Test positions is running. Use the same rules for the drop prompt and the drop action.
-- [ ] Reuse the piece classifier across images and manual selections. Show the first results while the rest of the batch is processing.
+- [x] Reuse the piece classifier across images and manual selections. Show the first results while the rest of the batch is processing.
 - [ ] Verify file clipboard support on Windows, macOS, Wayland and X11. Document file pasting, image pasting and drag-and-drop separately.
 - [ ] Document how to reproduce the pinned ONNX export and record the licenses for both sets of weights.
 
